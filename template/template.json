@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "15309266331040383485"
+      "templateHash": "2223019270643552019"
     }
   },
   "parameters": {
@@ -5608,6 +5608,11 @@
                 "principalId": "[reference('userAssignedIdentityModule').outputs.principalId.value]",
                 "roleDefinitionIdOrName": "Storage Account Key Operator Service Role",
                 "principalType": "ServicePrincipal"
+              },
+              {
+                "principalId": "[deployer().objectId]",
+                "roleDefinitionIdOrName": "Storage File Data SMB Share Contributor",
+                "principalType": "User"
               }
             ]
           },

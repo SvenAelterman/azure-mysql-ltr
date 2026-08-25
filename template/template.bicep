@@ -1,0 +1,235 @@
+param storageAccountName string = 'mysqlltrprodst01${take(uniqueString(resourceGroup().id), 4)}'
+param automationAccountName string = 'MySQLLTR-prod-aa-${location}-01'
+param userAssignedIdentityName string = 'MySQLLTR-prod-id-${location}-01'
+param location string = resourceGroup().location
+param backupFileShareName string = 'backup-file-share'
+param scriptLocation string = deployment().properties.templateLink.uri
+
+param enableAvmTelemetry bool = true
+param tags object?
+
+@description('The private DNS zone must be linked to the virtual network already.')
+param fileSharePrivateDnsZoneResourceId string
+param privateEndpointSubnetResourceId string
+@description('Must be delegated to *Microsoft.ContainerInstance/containerGroups*')
+param containerInstanceSubnetResourceId string
+
+param mySqlUsername string = 'sqladmin'
+@secure()
+param mySqlPassword string
+
+param scheduleStartDate string = dateTimeAdd(utcNow(), 'P1D', 'yyyy-MM-dd')
+param scheduleStartTimeUtc string = '06:00:00' // 2 AM Eastern Time
+param databaseNamesForBackup array = ['redcapdb']
+param databaseHostName string
+
+module userAssignedIdentityModule 'br/public:avm/res/managed-identity/user-assigned-identity:0.6.0' = {
+  name: 'userAssignedIdentityModule'
+  params: {
+    name: userAssignedIdentityName
+    location: location
+
+    enableTelemetry: enableAvmTelemetry
+    tags: tags
+  }
+}
+
+module automationAccountOuterModule 'automationAccount.bicep' = {
+  name: 'automationAccountOuterModule'
+  params: {
+    automationAccountName: automationAccountName
+    containerInstanceSubnetResourceId: containerInstanceSubnetResourceId
+    scriptLocation: scriptLocation
+    location: location
+    scheduleStartDate: scheduleStartDate
+    scheduleStartTimeUtc: scheduleStartTimeUtc
+    uamiClientId: userAssignedIdentityModule.outputs.clientId
+    uamiResourceId: userAssignedIdentityModule.outputs.resourceId
+    databaseHostName: databaseHostName
+    databaseNamesForBackup: databaseNamesForBackup
+    storageAccountName: storageAccountName
+    backupFileShareName: backupFileShareName
+    containerRegistryLoginServer: containerRegistryModule.outputs.loginServer
+    mySqlUsername: mySqlUsername
+    mySqlPassword: mySqlPassword
+    acrName: containerRegistryModule.outputs.name
+    enableAvmTelemetry: enableAvmTelemetry
+    tags: tags
+  }
+}
+
+module storageAccountModule 'br/public:avm/res/storage/storage-account:0.33.0' = {
+  name: 'storageAccountModule'
+  params: {
+    name: storageAccountName
+    location: location
+    skuName: 'Standard_GRS'
+    kind: 'StorageV2'
+
+    supportsHttpsTrafficOnly: true
+    // Required to support mounting container volume
+    allowSharedKeyAccess: true
+
+    fileServices: {
+      shareDeleteRetentionPolicy: {
+        enabled: true
+        days: 7
+      }
+      shares: [
+        {
+          name: backupFileShareName
+          accessTier: 'TransactionOptimized'
+          shareQuota: 5120
+          enabledProtocols: 'SMB'
+        }
+      ]
+    }
+
+    privateEndpoints: [
+      {
+        privateDnsZoneGroup: {
+          privateDnsZoneGroupConfigs: [
+            {
+              privateDnsZoneResourceId: fileSharePrivateDnsZoneResourceId
+            }
+          ]
+        }
+        subnetResourceId: privateEndpointSubnetResourceId
+        service: 'file'
+      }
+    ]
+
+    roleAssignments: [
+      {
+        principalId: userAssignedIdentityModule.outputs.principalId
+        // Required role to retrieve storage account keys for mounting the file share in the container instance
+        roleDefinitionIdOrName: 'Storage Account Key Operator Service Role'
+        principalType: 'ServicePrincipal'
+      }
+      {
+        principalId: deployer().objectId
+        // Assign registry-wide permissions
+        roleDefinitionIdOrName: 'Storage File Data SMB Share Contributor'
+        principalType: 'User'
+      }
+    ]
+
+    enableTelemetry: enableAvmTelemetry
+    tags: tags
+  }
+}
+
+module containerRegistryModule 'br/public:avm/res/container-registry/registry:0.13.0' = {
+  name: 'containerRegistryModule'
+  params: {
+    name: 'mysqlltrprodcr01${take(uniqueString(resourceGroup().id), 4)}'
+    location: location
+    acrSku: 'Basic'
+
+    // Required for Container Instance to pull the image
+    acrAdminUserEnabled: true
+
+    roleAssignmentMode: 'AbacRepositoryPermissions'
+
+    networkRuleBypassAllowedForTasks: true
+
+    roleAssignments: [
+      // LATER: is the first role assignment still needed?
+      {
+        principalId: userAssignedIdentityModule.outputs.principalId
+        roleDefinitionIdOrName: 'AcrPull'
+        principalType: 'ServicePrincipal'
+      }
+      // The roles below need to be used because the support ABAC, though we're not using attributes
+      // and allow access to all repositories in the registry.
+      {
+        principalId: userAssignedIdentityModule.outputs.principalId
+        // Required role to allow the container instance to push the image to the ABAC-enabled registry
+        roleDefinitionIdOrName: 'Container Registry Repository Writer'
+        principalType: 'ServicePrincipal'
+      }
+      {
+        principalId: deployer().objectId
+        // Assign registry-wide permissions
+        roleDefinitionIdOrName: 'Container Registry Repository Contributor'
+        principalType: 'User'
+      }
+      {
+        principalId: deployer().objectId
+        // Assign registry-wide permissions
+        roleDefinitionIdOrName: 'Container Registry Repository Catalog Lister'
+        principalType: 'User'
+      }
+    ]
+
+    // Build the container image
+    tasks: [
+      {
+        name: 'azure-mysql-ltr'
+        platform: {
+          os: 'Linux'
+          architecture: 'amd64'
+        }
+        tags: tags
+        status: 'Enabled'
+        // disable-next-line required due to https://github.com/Azure/bicep-registry-modules/issues/7296
+        #disable-next-line BCP037
+        managedIdentities: {
+          userAssignedResourceIds: [userAssignedIdentityModule.outputs.resourceId]
+        }
+        // disable-next-line required due to 
+        #disable-next-line BCP037
+        credentials: {
+          // An ABAC-enabled registry requires credentials for the task to access the registry.
+          // The user-assigned identity is used to authenticate to the registry.
+          sourceRegistry: {
+            loginMode: 'Default'
+            identity: userAssignedIdentityModule.outputs.clientId
+          }
+        }
+        step: {
+          type: 'Docker'
+          dockerFilePath: 'Dockerfile'
+          imageNames: ['azure-mysql-ltr/mysql-ltr-dump:latest']
+          isPushEnabled: true
+          contextPath: 'https://github.com/SvenAelterman/azure-mysql-ltr'
+        }
+      }
+    ]
+
+    enableTelemetry: enableAvmTelemetry
+    tags: tags
+  }
+}
+
+// Create role assignments on resource group
+module resourceGroupRoleAssignmentModule 'br/public:avm/res/authorization/role-assignment/rg-scope:0.1.1' = {
+  name: 'resourceGroupRoleAssignmentModule'
+  params: {
+    principalId: userAssignedIdentityModule.outputs.principalId
+    roleDefinitionIdOrName: 'Contributor'
+    principalType: 'ServicePrincipal'
+
+    enableTelemetry: enableAvmTelemetry
+  }
+}
+
+var splitSubnetId = split(containerInstanceSubnetResourceId, '/')
+resource containerVirtualNetwork 'Microsoft.Network/virtualNetworks@2025-07-01' existing = {
+  name: splitSubnetId[8]
+  scope: resourceGroup(splitSubnetId[2], splitSubnetId[4])
+}
+
+// Create role assignment on the virtual network
+module vnetRoleAssignmentModule 'br/public:avm/ptn/authorization/resource-role-assignment:0.1.2' = {
+  name: 'vnetRoleAssignmentModule'
+  scope: resourceGroup(splitSubnetId[2], splitSubnetId[4])
+  params: {
+    principalId: userAssignedIdentityModule.outputs.principalId
+    roleDefinitionId: '/providers/Microsoft.Authorization/roleDefinitions/4d97b98b-1d4f-4787-a291-c67834d212e7' // Network Contributor
+    principalType: 'ServicePrincipal'
+    resourceId: containerVirtualNetwork.id
+
+    enableTelemetry: enableAvmTelemetry
+  }
+}

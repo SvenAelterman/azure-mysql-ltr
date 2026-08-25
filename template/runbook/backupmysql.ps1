@@ -96,7 +96,8 @@ while ($true) {
     }
 }
 
-Get-AzContainerInstanceLog -ContainerGroupName $ContainerGroup.Name -Container.Name $ContainerName -ResourceGroupName $ContainerResourceGroupName | Write-Output
+Write-Output "Fetching container logs..."
+Get-AzContainerInstanceLog -ContainerGroupName $ContainerGroup.Name -ContainerName $ContainerName -ResourceGroupName $ContainerResourceGroupName | Write-Output
 
 # Stop container after backup
 Write-Output "Stopping container..."

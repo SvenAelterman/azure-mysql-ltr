@@ -1,0 +1,3 @@
+*.bicepparam
+*.json
+!template.json

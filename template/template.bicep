@@ -1,26 +1,41 @@
+@description('The resource name of the storage account to be created for storing the backups.')
 param storageAccountName string = 'mysqlltrprodst01${take(uniqueString(resourceGroup().id), 4)}'
+@description('The resource name of the Azure Automation account to be created for running the backup runbook.')
 param automationAccountName string = 'MySQLLTR-prod-aa-${location}-01'
+@description('The resource name of the user-assigned managed identity to be created for the container instance.')
 param userAssignedIdentityName string = 'MySQLLTR-prod-id-${location}-01'
+@description('The Azure region where all resources should be deployed. Defaults to the resource group location.')
 param location string = resourceGroup().location
+@description('The name of the file share to be created in the storage account for storing the backups.')
 param backupFileShareName string = 'backup-file-share'
+@description('The URI of the PowerShell script file that is the runbook code.')
 param scriptLocation string = deployment().properties.templateLink.uri
 
+@description('If true, telemetry from the Azure Verified Modules will be sent.')
 param enableAvmTelemetry bool = true
+@description('Optional. Tags will be applied to all resources.')
 param tags object?
 
-@description('The private DNS zone must be linked to the virtual network already.')
+@description('The private DNS zone must already be linked to the virtual network where the Container Instance will be deployed.')
 param fileSharePrivateDnsZoneResourceId string
+@description('The subnet resource ID where the private endpoints.')
 param privateEndpointSubnetResourceId string
-@description('Must be delegated to *Microsoft.ContainerInstance/containerGroups*')
+@description('The subnet resource ID where the container instance will be deployed. Must be delegated to *Microsoft.ContainerInstance/containerGroups*.')
 param containerInstanceSubnetResourceId string
 
+@description('The username for the MySQL server. Defaults to "sqladmin".')
 param mySqlUsername string = 'sqladmin'
+@description('The password for the MySQL server.')
 @secure()
 param mySqlPassword string
 
+@description('The date when the backup schedule should start. Defaults to tomorrow.')
 param scheduleStartDate string = dateTimeAdd(utcNow(), 'P1D', 'yyyy-MM-dd')
+@description('The time when the backup schedule should start, in UTC. Defaults to 6 AM UTC.')
 param scheduleStartTimeUtc string = '06:00:00' // 2 AM Eastern Time
+@description('The names of the databases to be backed up. Defaults to ["redcapdb"].')
 param databaseNamesForBackup array = ['redcapdb']
+@description('The hostname of the MySQL server to be backed up.')
 param databaseHostName string
 
 module userAssignedIdentityModule 'br/public:avm/res/managed-identity/user-assigned-identity:0.6.0' = {

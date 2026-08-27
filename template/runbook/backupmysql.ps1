@@ -42,6 +42,8 @@ $MySQLCredential = Get-AutomationPSCredential -Name "MySQLCredential"
 $MySQLUsername = $MySQLCredential.UserName
 $MySQLPassword = $MySQLCredential.GetNetworkCredential().Password
 
+Write-Output "Retrieved MySQL credential"
+
 $BackupJobTimeStamp = Get-Date -Format "yyyyMMddhhmmss"
 $filename = "--result-file=/data/backups/dumps-" + $BackupJobTimeStamp + ".sql"
 $h1 = "--host=" + $DatabaseHostName
@@ -51,6 +53,7 @@ $dbnamearray = $DatabaseNames.Split(" ", [System.StringSplitOptions]::RemoveEmpt
 
 $cmd = "/usr/local/bin/backup-and-upload.sh", "--opt", "--single-transaction", $h1, $user, $sqlPassword, $filename, "--databases"
 
+# Add each database name as a separate entry to the container command
 foreach ($names in $dbnamearray) {
     $cmd += $names
 }
@@ -77,38 +80,52 @@ $EnvironmentVariables = @(
 
 # Create the container instance object
 $Container = New-AzContainerInstanceObject -Name $ContainerName -Image "$ContainerRegistryUrl/azure-mysql-ltr/mysql-ltr-dump:latest" -VolumeMount $VolumeMount `
-    -Command $cmd -EnvironmentVariable $EnvironmentVariables
+    -Command $cmd -EnvironmentVariable $EnvironmentVariables `
+    -RequestCpu 1 -RequestMemoryInGb 1.5
 
 $SubnetId = @{
     Id   = $ContainerInstanceSubnetResourceId
     Name = "ContainerSubnet"   
 }
 
-$ContainerGroupIdentity = @{}
-$ContainerGroupIdentity[$ManagedIdentityResourceId] = @{}
+# $ContainerGroupIdentity = @{}
+# $ContainerGroupIdentity[$ManagedIdentityResourceId] = @{}
 
-# Deploy the container in a container group
-Write-Output "Creating container..."
-$ContainerGroup = New-AzContainerGroup -ResourceGroupName $ContainerResourceGroupName -Name $ContainerName -Location $Location -Container $Container -Volume $Volume `
-    -RestartPolicy Never -OSType Linux -SubnetId $SubnetId `
-    -ImageRegistryCredential $ImageRegistryCredential `
-    -IdentityType UserAssigned -IdentityUserAssignedIdentity $ContainerGroupIdentity
+try {
+    # Deploy the container in a container group
+    Write-Output "Creating container..."
+    $ContainerGroup = New-AzContainerGroup -ResourceGroupName $ContainerResourceGroupName -Name $ContainerName `
+        -Location $Location -Container $Container -Volume $Volume `
+        -RestartPolicy Never -OSType Linux -SubnetId $SubnetId `
+        -ImageRegistryCredential $ImageRegistryCredential `
+        -UserAssignedIdentity @($ManagedIdentityResourceId) -Verbose
 
-while ($true) {
-    $Status = (Get-AzContainerGroup -Name $ContainerName -ResourceGroupName $ContainerResourceGroupName | Select-Object -Property @{Name = "Status"; Expression = { $_.InstanceViewState } }).Status
+    while ($true) {
+        $Status = (Get-AzContainerGroup -Name $ContainerName -ResourceGroupName $ContainerResourceGroupName | Select-Object -Property @{Name = "Status"; Expression = { $_.InstanceViewState } }).Status
 
-    if ($Status -eq "Failed") {
-        Write-Output "Container in Failed State. Please check the logs below."
-        Break
+        if ($Status -eq "Failed") {
+            Write-Output "Container in Failed State. Please check the logs below."
+            Break
+        }
+        elseif ($Status -eq "Stopped" -or $Status -eq "Succeeded") {
+            Write-Output "Container execution complete. Please check the logs below."
+            Break
+        }
+        else {
+            Write-Output $Status
+            Start-Sleep -Seconds 30
+        }
     }
-    elseif ($Status -eq "Stopped" -or $Status -eq "Succeeded") {
-        Write-Output "Container execution complete. Please check the logs below."
-        Break
-    }
-    else {
-        Write-Output $Status
-        Start-Sleep -Seconds 30
-    }
+}
+catch {
+    Write-Error "Message: $($_.Exception.Message)"
+    Write-Error "Type: $($_.Exception.GetType().FullName)"
+    Write-Error "Invocation: $($_.InvocationInfo.Line)"
+    Write-Error "ScriptLineNumber: $($_.InvocationInfo.ScriptLineNumber)"
+    Write-Error "Position: $($_.InvocationInfo.PositionMessage)"
+    Write-Error "ScriptStackTrace:`n$($_.ScriptStackTrace)"
+
+    throw
 }
 
 Write-Output "Fetching container logs..."

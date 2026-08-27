@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "14669696249862733220"
+      "templateHash": "7382198586936735418"
     }
   },
   "parameters": {
@@ -763,7 +763,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "1558477296565094718"
+              "templateHash": "10471508466994688915"
             }
           },
           "parameters": {
@@ -886,6 +886,36 @@
                 "runtimeEnvironment"
               ]
             },
+            "jobSchedules": {
+              "type": "Microsoft.Automation/automationAccounts/jobSchedules",
+              "apiVersion": "2024-10-23",
+              "name": "[format('{0}/{1}', parameters('automationAccountName'), guid(parameters('automationAccountName'), variables('runBookName'), variables('scheduleName')))]",
+              "properties": {
+                "schedule": {
+                  "name": "[variables('scheduleName')]"
+                },
+                "runbook": {
+                  "name": "[variables('runBookName')]"
+                },
+                "parameters": {
+                  "ManagedIdentityClientId": "[parameters('uamiClientId')]",
+                  "ManagedIdentityResourceId": "[parameters('uamiResourceId')]",
+                  "ContainerResourceGroupName": "[resourceGroup().name]",
+                  "DatabaseHostName": "[parameters('databaseHostName')]",
+                  "DatabaseNames": "[join(parameters('databaseNamesForBackup'), ' ')]",
+                  "StorageAccountName": "[parameters('storageAccountName')]",
+                  "BackupFileShareName": "[parameters('backupFileShareName')]",
+                  "BackupBlobContainerName": "[parameters('backupBlobContainerName')]",
+                  "ContainerInstanceSubnetResourceId": "[parameters('containerInstanceSubnetResourceId')]",
+                  "ContainerRegistryUrl": "[parameters('containerRegistryLoginServer')]",
+                  "Location": "[parameters('location')]"
+                }
+              },
+              "dependsOn": [
+                "automationAccountModule",
+                "runbook"
+              ]
+            },
             "automationAccountModule": {
               "type": "Microsoft.Resources/deployments",
               "apiVersion": "2025-04-01",
@@ -934,28 +964,6 @@
                           "weekDays": [
                             "Sunday"
                           ]
-                        }
-                      }
-                    ]
-                  },
-                  "jobSchedules": {
-                    "value": [
-                      {
-                        "description": "[format('Schedule to run the {0} runbook based on the {1} schedule.', variables('runBookName'), variables('scheduleName'))]",
-                        "runbookName": "[variables('runBookName')]",
-                        "scheduleName": "[variables('scheduleName')]",
-                        "parameters": {
-                          "ManagedIdentityClientId": "[parameters('uamiClientId')]",
-                          "ManagedIdentityResourceId": "[parameters('uamiResourceId')]",
-                          "ContainerResourceGroupName": "[resourceGroup().name]",
-                          "DatabaseHostName": "[parameters('databaseHostName')]",
-                          "DatabaseNames": "[join(parameters('databaseNamesForBackup'), ' ')]",
-                          "StorageAccountName": "[parameters('storageAccountName')]",
-                          "BackupFileShareName": "[parameters('backupFileShareName')]",
-                          "BackupBlobContainerName": "[parameters('backupBlobContainerName')]",
-                          "ContainerInstanceSubnetResourceId": "[parameters('containerInstanceSubnetResourceId')]",
-                          "ContainerRegistryUrl": "[parameters('containerRegistryLoginServer')]",
-                          "Location": "[parameters('location')]"
                         }
                       }
                     ]

@@ -74,27 +74,27 @@ module automationAccountModule 'br/public:avm/res/automation/automation-account:
       }
     ]
 
-    jobSchedules: [
-      {
-        description: 'Schedule to run the ${runBookName} runbook based on the ${scheduleName} schedule.'
-        runbookName: runBookName
-        scheduleName: scheduleName
+    // jobSchedules: [
+    //   {
+    //     description: 'Schedule to run the ${runBookName} runbook based on the ${scheduleName} schedule.'
+    //     runbookName: runBookName
+    //     scheduleName: scheduleName
 
-        parameters: {
-          ManagedIdentityClientId: uamiClientId
-          ManagedIdentityResourceId: uamiResourceId
-          ContainerResourceGroupName: resourceGroup().name
-          DatabaseHostName: databaseHostName
-          DatabaseNames: join(databaseNamesForBackup, ' ')
-          StorageAccountName: storageAccountName
-          BackupFileShareName: backupFileShareName
-          BackupBlobContainerName: backupBlobContainerName
-          ContainerInstanceSubnetResourceId: containerInstanceSubnetResourceId
-          ContainerRegistryUrl: containerRegistryLoginServer
-          Location: location
-        }
-      }
-    ]
+    //     parameters: {
+    //       ManagedIdentityClientId: uamiClientId
+    //       ManagedIdentityResourceId: uamiResourceId
+    //       ContainerResourceGroupName: resourceGroup().name
+    //       DatabaseHostName: databaseHostName
+    //       DatabaseNames: join(databaseNamesForBackup, ' ')
+    //       StorageAccountName: storageAccountName
+    //       BackupFileShareName: backupFileShareName
+    //       BackupBlobContainerName: backupBlobContainerName
+    //       ContainerInstanceSubnetResourceId: containerInstanceSubnetResourceId
+    //       ContainerRegistryUrl: containerRegistryLoginServer
+    //       Location: location
+    //     }
+    //   }
+    // ]
 
     managedIdentities: {
       systemAssigned: true
@@ -144,6 +144,32 @@ resource runbook 'Microsoft.Automation/automationAccounts/runbooks@2024-10-23' =
     publishContentLink: {
       uri: uri(scriptLocation, 'runbook/backupmysql.ps1')
       version: '1.0.0.0'
+    }
+  }
+}
+
+resource jobSchedules 'Microsoft.Automation/automationAccounts/jobSchedules@2024-10-23' = {
+  name: guid(automationAccountName, runBookName, scheduleName)
+  parent: automationAccount
+  properties: {
+    schedule: {
+      name: scheduleName
+    }
+    runbook: {
+      name: runbook.name
+    }
+    parameters: {
+      ManagedIdentityClientId: uamiClientId
+      ManagedIdentityResourceId: uamiResourceId
+      ContainerResourceGroupName: resourceGroup().name
+      DatabaseHostName: databaseHostName
+      DatabaseNames: join(databaseNamesForBackup, ' ')
+      StorageAccountName: storageAccountName
+      BackupFileShareName: backupFileShareName
+      BackupBlobContainerName: backupBlobContainerName
+      ContainerInstanceSubnetResourceId: containerInstanceSubnetResourceId
+      ContainerRegistryUrl: containerRegistryLoginServer
+      Location: location
     }
   }
 }

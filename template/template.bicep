@@ -8,6 +8,8 @@ param userAssignedIdentityName string = 'MySQLLTR-prod-id-${location}-01'
 param location string = resourceGroup().location
 @description('The name of the file share to be created in the storage account for storing the backups.')
 param backupFileShareName string = 'backup-file-share'
+@description('The name of the blob container to be created in the storage account for storing backup copies.')
+param backupBlobContainerName string = 'backup-blob-container'
 @description('The URI of the PowerShell script file that is the runbook code.')
 param scriptLocation string = deployment().properties.templateLink.uri
 
@@ -18,6 +20,8 @@ param tags object?
 
 @description('The private DNS zone must already be linked to the virtual network where the Container Instance will be deployed.')
 param fileSharePrivateDnsZoneResourceId string
+@description('The blob private DNS zone must already be linked to the virtual network where the Container Instance will be deployed.')
+param blobPrivateDnsZoneResourceId string
 @description('The subnet resource ID where the private endpoints.')
 param privateEndpointSubnetResourceId string
 @description('The subnet resource ID where the container instance will be deployed. Must be delegated to *Microsoft.ContainerInstance/containerGroups*.')
@@ -64,6 +68,7 @@ module automationAccountOuterModule 'automationAccount.bicep' = {
     databaseNamesForBackup: databaseNamesForBackup
     storageAccountName: storageAccountName
     backupFileShareName: backupFileShareName
+    backupBlobContainerName: backupBlobContainerName
     containerRegistryLoginServer: containerRegistryModule.outputs.loginServer
     mySqlUsername: mySqlUsername
     mySqlPassword: mySqlPassword
@@ -100,6 +105,15 @@ module storageAccountModule 'br/public:avm/res/storage/storage-account:0.33.0' =
       ]
     }
 
+    blobServices: {
+      containers: [
+        {
+          name: backupBlobContainerName
+          publicAccess: 'None'
+        }
+      ]
+    }
+
     privateEndpoints: [
       {
         privateDnsZoneGroup: {
@@ -112,6 +126,17 @@ module storageAccountModule 'br/public:avm/res/storage/storage-account:0.33.0' =
         subnetResourceId: privateEndpointSubnetResourceId
         service: 'file'
       }
+      {
+        privateDnsZoneGroup: {
+          privateDnsZoneGroupConfigs: [
+            {
+              privateDnsZoneResourceId: blobPrivateDnsZoneResourceId
+            }
+          ]
+        }
+        subnetResourceId: privateEndpointSubnetResourceId
+        service: 'blob'
+      }
     ]
 
     roleAssignments: [
@@ -119,6 +144,18 @@ module storageAccountModule 'br/public:avm/res/storage/storage-account:0.33.0' =
         principalId: userAssignedIdentityModule.outputs.principalId
         // Required role to retrieve storage account keys for mounting the file share in the container instance
         roleDefinitionIdOrName: 'Storage Account Key Operator Service Role'
+        principalType: 'ServicePrincipal'
+      }
+      {
+        principalId: userAssignedIdentityModule.outputs.principalId
+        // Required role to allow the container to read from the mounted file share with managed identity
+        roleDefinitionIdOrName: 'Storage File Data SMB Share Reader'
+        principalType: 'ServicePrincipal'
+      }
+      {
+        principalId: userAssignedIdentityModule.outputs.principalId
+        // Required role to allow azcopy to upload dumps to the blob container with managed identity
+        roleDefinitionIdOrName: 'Storage Blob Data Contributor'
         principalType: 'ServicePrincipal'
       }
       {

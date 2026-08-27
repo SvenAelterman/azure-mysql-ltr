@@ -6,80 +6,138 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "2223019270643552019"
+      "templateHash": "8368647599851990767"
     }
   },
   "parameters": {
     "storageAccountName": {
       "type": "string",
-      "defaultValue": "[format('mysqlltrprodst01{0}', take(uniqueString(resourceGroup().id), 4))]"
+      "defaultValue": "[format('mysqlltrprodst01{0}', take(uniqueString(resourceGroup().id), 4))]",
+      "metadata": {
+        "description": "The resource name of the storage account to be created for storing the backups."
+      }
     },
     "automationAccountName": {
       "type": "string",
-      "defaultValue": "[format('MySQLLTR-prod-aa-{0}-01', parameters('location'))]"
+      "defaultValue": "[format('MySQLLTR-prod-aa-{0}-01', parameters('location'))]",
+      "metadata": {
+        "description": "The resource name of the Azure Automation account to be created for running the backup runbook."
+      }
     },
     "userAssignedIdentityName": {
       "type": "string",
-      "defaultValue": "[format('MySQLLTR-prod-id-{0}-01', parameters('location'))]"
+      "defaultValue": "[format('MySQLLTR-prod-id-{0}-01', parameters('location'))]",
+      "metadata": {
+        "description": "The resource name of the user-assigned managed identity to be created for the container instance."
+      }
     },
     "location": {
       "type": "string",
-      "defaultValue": "[resourceGroup().location]"
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "The Azure region where all resources should be deployed. Defaults to the resource group location."
+      }
     },
     "backupFileShareName": {
       "type": "string",
-      "defaultValue": "backup-file-share"
+      "defaultValue": "backup-file-share",
+      "metadata": {
+        "description": "The name of the file share to be created in the storage account for storing the backups."
+      }
+    },
+    "backupBlobContainerName": {
+      "type": "string",
+      "defaultValue": "backup-blob-container",
+      "metadata": {
+        "description": "The name of the blob container to be created in the storage account for storing backup copies."
+      }
     },
     "scriptLocation": {
       "type": "string",
-      "defaultValue": "[deployment().properties.templateLink.uri]"
+      "defaultValue": "[deployment().properties.templateLink.uri]",
+      "metadata": {
+        "description": "The URI of the PowerShell script file that is the runbook code."
+      }
     },
     "enableAvmTelemetry": {
       "type": "bool",
-      "defaultValue": true
+      "defaultValue": true,
+      "metadata": {
+        "description": "If true, telemetry from the Azure Verified Modules will be sent."
+      }
     },
     "tags": {
       "type": "object",
-      "nullable": true
+      "nullable": true,
+      "metadata": {
+        "description": "Optional. Tags will be applied to all resources."
+      }
     },
     "fileSharePrivateDnsZoneResourceId": {
       "type": "string",
       "metadata": {
-        "description": "The private DNS zone must be linked to the virtual network already."
+        "description": "The private DNS zone must already be linked to the virtual network where the Container Instance will be deployed."
+      }
+    },
+    "blobPrivateDnsZoneResourceId": {
+      "type": "string",
+      "metadata": {
+        "description": "The blob private DNS zone must already be linked to the virtual network where the Container Instance will be deployed."
       }
     },
     "privateEndpointSubnetResourceId": {
-      "type": "string"
+      "type": "string",
+      "metadata": {
+        "description": "The subnet resource ID where the private endpoints."
+      }
     },
     "containerInstanceSubnetResourceId": {
       "type": "string",
       "metadata": {
-        "description": "Must be delegated to *Microsoft.ContainerInstance/containerGroups*"
+        "description": "The subnet resource ID where the container instance will be deployed. Must be delegated to *Microsoft.ContainerInstance/containerGroups*."
       }
     },
     "mySqlUsername": {
       "type": "string",
-      "defaultValue": "sqladmin"
+      "defaultValue": "sqladmin",
+      "metadata": {
+        "description": "The username for the MySQL server. Defaults to \"sqladmin\"."
+      }
     },
     "mySqlPassword": {
-      "type": "securestring"
+      "type": "securestring",
+      "metadata": {
+        "description": "The password for the MySQL server."
+      }
     },
     "scheduleStartDate": {
       "type": "string",
-      "defaultValue": "[dateTimeAdd(utcNow(), 'P1D', 'yyyy-MM-dd')]"
+      "defaultValue": "[dateTimeAdd(utcNow(), 'P1D', 'yyyy-MM-dd')]",
+      "metadata": {
+        "description": "The date when the backup schedule should start. Defaults to tomorrow."
+      }
     },
     "scheduleStartTimeUtc": {
       "type": "string",
-      "defaultValue": "06:00:00"
+      "defaultValue": "06:00:00",
+      "metadata": {
+        "description": "The time when the backup schedule should start, in UTC. Defaults to 6 AM UTC."
+      }
     },
     "databaseNamesForBackup": {
       "type": "array",
       "defaultValue": [
         "redcapdb"
-      ]
+      ],
+      "metadata": {
+        "description": "The names of the databases to be backed up. Defaults to [\"redcapdb\"]."
+      }
     },
     "databaseHostName": {
-      "type": "string"
+      "type": "string",
+      "metadata": {
+        "description": "The hostname of the MySQL server to be backed up."
+      }
     }
   },
   "variables": {
@@ -675,6 +733,9 @@
           "backupFileShareName": {
             "value": "[parameters('backupFileShareName')]"
           },
+          "backupBlobContainerName": {
+            "value": "[parameters('backupBlobContainerName')]"
+          },
           "containerRegistryLoginServer": {
             "value": "[reference('containerRegistryModule').outputs.loginServer.value]"
           },
@@ -702,7 +763,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "7423774457273367490"
+              "templateHash": "13399762029650461197"
             }
           },
           "parameters": {
@@ -739,6 +800,9 @@
             "backupFileShareName": {
               "type": "string"
             },
+            "backupBlobContainerName": {
+              "type": "string"
+            },
             "containerRegistryLoginServer": {
               "type": "string"
             },
@@ -772,6 +836,85 @@
               "type": "Microsoft.ContainerRegistry/registries",
               "apiVersion": "2025-11-01",
               "name": "[parameters('acrName')]"
+            },
+            "automationAccount": {
+              "existing": true,
+              "type": "Microsoft.Automation/automationAccounts",
+              "apiVersion": "2024-10-23",
+              "name": "[parameters('automationAccountName')]",
+              "dependsOn": [
+                "automationAccountModule"
+              ]
+            },
+            "runtimeEnvironment": {
+              "type": "Microsoft.Automation/automationAccounts/runtimeEnvironments",
+              "apiVersion": "2024-10-23",
+              "name": "[format('{0}/{1}', parameters('automationAccountName'), 'PowerShell-76-Custom')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "runtime": {
+                  "language": "PowerShell",
+                  "version": "7.6"
+                },
+                "defaultPackages": {
+                  "az": "15.1.0",
+                  "azure cli": "2.77.0"
+                }
+              },
+              "dependsOn": [
+                "automationAccountModule"
+              ]
+            },
+            "runbook": {
+              "type": "Microsoft.Automation/automationAccounts/runbooks",
+              "apiVersion": "2024-10-23",
+              "name": "[format('{0}/{1}', parameters('automationAccountName'), variables('runBookName'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "description": "Runbook to backup MySQL database to Azure Storage for long-term retention. See https://techcommunity.microsoft.com/blog/adformysql/azure-database-for-mysql-extending-long-term-retention-by-using-containers/3065164",
+                "runbookType": "PowerShell",
+                "runtimeEnvironment": "PowerShell-76-Custom",
+                "logVerbose": true,
+                "logProgress": true,
+                "publishContentLink": {
+                  "uri": "[uri(parameters('scriptLocation'), 'runbook/backupmysql.ps1')]",
+                  "version": "1.0.0.0"
+                }
+              },
+              "dependsOn": [
+                "automationAccountModule",
+                "runtimeEnvironment"
+              ]
+            },
+            "jobSchedules": {
+              "type": "Microsoft.Automation/automationAccounts/jobSchedules",
+              "apiVersion": "2024-10-23",
+              "name": "[format('{0}/{1}', parameters('automationAccountName'), guid(parameters('automationAccountName'), variables('runBookName'), variables('scheduleName')))]",
+              "properties": {
+                "schedule": {
+                  "name": "[variables('scheduleName')]"
+                },
+                "runbook": {
+                  "name": "[variables('runBookName')]"
+                },
+                "parameters": {
+                  "ManagedIdentityClientId": "[parameters('uamiClientId')]",
+                  "ManagedIdentityResourceId": "[parameters('uamiResourceId')]",
+                  "ContainerResourceGroupName": "[resourceGroup().name]",
+                  "DatabaseHostName": "[parameters('databaseHostName')]",
+                  "DatabaseNames": "[join(parameters('databaseNamesForBackup'), ' ')]",
+                  "StorageAccountName": "[parameters('storageAccountName')]",
+                  "BackupFileShareName": "[parameters('backupFileShareName')]",
+                  "BackupBlobContainerName": "[parameters('backupBlobContainerName')]",
+                  "ContainerInstanceSubnetResourceId": "[parameters('containerInstanceSubnetResourceId')]",
+                  "ContainerRegistryUrl": "[parameters('containerRegistryLoginServer')]",
+                  "Location": "[parameters('location')]"
+                }
+              },
+              "dependsOn": [
+                "automationAccountModule",
+                "runbook"
+              ]
             },
             "automationAccountModule": {
               "type": "Microsoft.Resources/deployments",
@@ -808,17 +951,6 @@
                       }
                     ]
                   },
-                  "runbooks": {
-                    "value": [
-                      {
-                        "name": "[variables('runBookName')]",
-                        "description": "Runbook to backup MySQL database to Azure Storage for long-term retention. See https://techcommunity.microsoft.com/blog/adformysql/azure-database-for-mysql-extending-long-term-retention-by-using-containers/3065164",
-                        "type": "PowerShell72",
-                        "uri": "[uri(parameters('scriptLocation'), 'runbook/backupmysql.ps1')]",
-                        "version": "1.0.0.0"
-                      }
-                    ]
-                  },
                   "schedules": {
                     "value": [
                       {
@@ -832,26 +964,6 @@
                           "weekDays": [
                             "Sunday"
                           ]
-                        }
-                      }
-                    ]
-                  },
-                  "jobSchedules": {
-                    "value": [
-                      {
-                        "description": "[format('Schedule to run the {0} runbook based on the {1} schedule.', variables('runBookName'), variables('scheduleName'))]",
-                        "runbookName": "[variables('runBookName')]",
-                        "scheduleName": "[variables('scheduleName')]",
-                        "parameters": {
-                          "ManagedIdentityClientId": "[parameters('uamiClientId')]",
-                          "ContainerResourceGroupName": "[resourceGroup().name]",
-                          "DatabaseHostName": "[parameters('databaseHostName')]",
-                          "DatabaseNames": "[join(parameters('databaseNamesForBackup'), ' ')]",
-                          "StorageAccountName": "[parameters('storageAccountName')]",
-                          "BackupFileShareName": "[parameters('backupFileShareName')]",
-                          "ContainerInstanceSubnetResourceId": "[parameters('containerInstanceSubnetResourceId')]",
-                          "ContainerRegistryUrl": "[parameters('containerRegistryLoginServer')]",
-                          "Location": "[parameters('location')]"
                         }
                       }
                     ]
@@ -5587,6 +5699,16 @@
               ]
             }
           },
+          "blobServices": {
+            "value": {
+              "containers": [
+                {
+                  "name": "[parameters('backupBlobContainerName')]",
+                  "publicAccess": "None"
+                }
+              ]
+            }
+          },
           "privateEndpoints": {
             "value": [
               {
@@ -5599,6 +5721,17 @@
                 },
                 "subnetResourceId": "[parameters('privateEndpointSubnetResourceId')]",
                 "service": "file"
+              },
+              {
+                "privateDnsZoneGroup": {
+                  "privateDnsZoneGroupConfigs": [
+                    {
+                      "privateDnsZoneResourceId": "[parameters('blobPrivateDnsZoneResourceId')]"
+                    }
+                  ]
+                },
+                "subnetResourceId": "[parameters('privateEndpointSubnetResourceId')]",
+                "service": "blob"
               }
             ]
           },
@@ -5607,6 +5740,16 @@
               {
                 "principalId": "[reference('userAssignedIdentityModule').outputs.principalId.value]",
                 "roleDefinitionIdOrName": "Storage Account Key Operator Service Role",
+                "principalType": "ServicePrincipal"
+              },
+              {
+                "principalId": "[reference('userAssignedIdentityModule').outputs.principalId.value]",
+                "roleDefinitionIdOrName": "Storage File Data SMB Share Reader",
+                "principalType": "ServicePrincipal"
+              },
+              {
+                "principalId": "[reference('userAssignedIdentityModule').outputs.principalId.value]",
+                "roleDefinitionIdOrName": "Storage Blob Data Contributor",
                 "principalType": "ServicePrincipal"
               },
               {

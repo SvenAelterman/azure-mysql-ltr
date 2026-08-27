@@ -6,90 +6,138 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "2223019270643552019"
+      "templateHash": "7435449826729470264"
     }
   },
   "parameters": {
     "storageAccountName": {
       "type": "string",
-      "defaultValue": "[format('mysqlltrprodst01{0}', take(uniqueString(resourceGroup().id), 4))]"
+      "defaultValue": "[format('mysqlltrprodst01{0}', take(uniqueString(resourceGroup().id), 4))]",
+      "metadata": {
+        "description": "The resource name of the storage account to be created for storing the backups."
+      }
     },
     "automationAccountName": {
       "type": "string",
-      "defaultValue": "[format('MySQLLTR-prod-aa-{0}-01', parameters('location'))]"
+      "defaultValue": "[format('MySQLLTR-prod-aa-{0}-01', parameters('location'))]",
+      "metadata": {
+        "description": "The resource name of the Azure Automation account to be created for running the backup runbook."
+      }
     },
     "userAssignedIdentityName": {
       "type": "string",
-      "defaultValue": "[format('MySQLLTR-prod-id-{0}-01', parameters('location'))]"
+      "defaultValue": "[format('MySQLLTR-prod-id-{0}-01', parameters('location'))]",
+      "metadata": {
+        "description": "The resource name of the user-assigned managed identity to be created for the container instance."
+      }
     },
     "location": {
       "type": "string",
-      "defaultValue": "[resourceGroup().location]"
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "The Azure region where all resources should be deployed. Defaults to the resource group location."
+      }
     },
     "backupFileShareName": {
       "type": "string",
-      "defaultValue": "backup-file-share"
+      "defaultValue": "backup-file-share",
+      "metadata": {
+        "description": "The name of the file share to be created in the storage account for storing the backups."
+      }
     },
     "backupBlobContainerName": {
       "type": "string",
-      "defaultValue": "backup-blob-container"
+      "defaultValue": "backup-blob-container",
+      "metadata": {
+        "description": "The name of the blob container to be created in the storage account for storing backup copies."
+      }
     },
     "scriptLocation": {
       "type": "string",
-      "defaultValue": "[deployment().properties.templateLink.uri]"
+      "defaultValue": "[deployment().properties.templateLink.uri]",
+      "metadata": {
+        "description": "The URI of the PowerShell script file that is the runbook code."
+      }
     },
     "enableAvmTelemetry": {
       "type": "bool",
-      "defaultValue": true
+      "defaultValue": true,
+      "metadata": {
+        "description": "If true, telemetry from the Azure Verified Modules will be sent."
+      }
     },
     "tags": {
       "type": "object",
-      "nullable": true
+      "nullable": true,
+      "metadata": {
+        "description": "Optional. Tags will be applied to all resources."
+      }
     },
     "fileSharePrivateDnsZoneResourceId": {
       "type": "string",
       "metadata": {
-        "description": "The private DNS zone must be linked to the virtual network already."
+        "description": "The private DNS zone must already be linked to the virtual network where the Container Instance will be deployed."
       }
     },
     "blobPrivateDnsZoneResourceId": {
       "type": "string",
       "metadata": {
-        "description": "The blob private DNS zone must be linked to the virtual network already."
+        "description": "The blob private DNS zone must already be linked to the virtual network where the Container Instance will be deployed."
       }
     },
     "privateEndpointSubnetResourceId": {
-      "type": "string"
+      "type": "string",
+      "metadata": {
+        "description": "The subnet resource ID where the private endpoints."
+      }
     },
     "containerInstanceSubnetResourceId": {
       "type": "string",
       "metadata": {
-        "description": "Must be delegated to *Microsoft.ContainerInstance/containerGroups*"
+        "description": "The subnet resource ID where the container instance will be deployed. Must be delegated to *Microsoft.ContainerInstance/containerGroups*."
       }
     },
     "mySqlUsername": {
       "type": "string",
-      "defaultValue": "sqladmin"
+      "defaultValue": "sqladmin",
+      "metadata": {
+        "description": "The username for the MySQL server. Defaults to \"sqladmin\"."
+      }
     },
     "mySqlPassword": {
-      "type": "securestring"
+      "type": "securestring",
+      "metadata": {
+        "description": "The password for the MySQL server."
+      }
     },
     "scheduleStartDate": {
       "type": "string",
-      "defaultValue": "[dateTimeAdd(utcNow(), 'P1D', 'yyyy-MM-dd')]"
+      "defaultValue": "[dateTimeAdd(utcNow(), 'P1D', 'yyyy-MM-dd')]",
+      "metadata": {
+        "description": "The date when the backup schedule should start. Defaults to tomorrow."
+      }
     },
     "scheduleStartTimeUtc": {
       "type": "string",
-      "defaultValue": "06:00:00"
+      "defaultValue": "06:00:00",
+      "metadata": {
+        "description": "The time when the backup schedule should start, in UTC. Defaults to 6 AM UTC."
+      }
     },
     "databaseNamesForBackup": {
       "type": "array",
       "defaultValue": [
         "redcapdb"
-      ]
+      ],
+      "metadata": {
+        "description": "The names of the databases to be backed up. Defaults to [\"redcapdb\"]."
+      }
     },
     "databaseHostName": {
-      "type": "string"
+      "type": "string",
+      "metadata": {
+        "description": "The hostname of the MySQL server to be backed up."
+      }
     }
   },
   "variables": {
@@ -715,7 +763,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "7423774457273367490"
+              "templateHash": "11526572000197130082"
             }
           },
           "parameters": {

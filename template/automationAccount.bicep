@@ -80,8 +80,8 @@ module automationAccountModule 'br/public:avm/res/automation/automation-account:
         scheduleName: scheduleName
 
         parameters: {
-          // TODO: List all
           ManagedIdentityClientId: uamiClientId
+          ManagedIdentityResourceId: uamiResourceId
           ContainerResourceGroupName: resourceGroup().name
           DatabaseHostName: databaseHostName
           DatabaseNames: join(databaseNamesForBackup, ' ')
@@ -91,7 +91,6 @@ module automationAccountModule 'br/public:avm/res/automation/automation-account:
           ContainerInstanceSubnetResourceId: containerInstanceSubnetResourceId
           ContainerRegistryUrl: containerRegistryLoginServer
           Location: location
-          //KeyVaultName: keyVaultOuterModule.outputs.name
         }
       }
     ]

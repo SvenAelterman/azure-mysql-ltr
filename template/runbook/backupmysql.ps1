@@ -88,8 +88,8 @@ $SubnetId = @{
     Name = "ContainerSubnet"   
 }
 
-# $ContainerGroupIdentity = @{}
-# $ContainerGroupIdentity[$ManagedIdentityResourceId] = @{}
+$ContainerGroupIdentity = @{}
+$ContainerGroupIdentity[$ManagedIdentityResourceId] = @{}
 
 try {
     # Deploy the container in a container group
@@ -98,7 +98,7 @@ try {
         -Location $Location -Container $Container -Volume $Volume `
         -RestartPolicy Never -OSType Linux -SubnetId $SubnetId `
         -ImageRegistryCredential $ImageRegistryCredential `
-        -UserAssignedIdentity @($ManagedIdentityResourceId) -Verbose
+        -IdentityType "UserAssigned" -IdentityUserAssignedIdentity $ContainerGroupIdentity
 
     while ($true) {
         $Status = (Get-AzContainerGroup -Name $ContainerName -ResourceGroupName $ContainerResourceGroupName | Select-Object -Property @{Name = "Status"; Expression = { $_.InstanceViewState } }).Status

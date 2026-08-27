@@ -137,7 +137,7 @@ resource runbook 'Microsoft.Automation/automationAccounts/runbooks@2024-10-23' =
   location: location
   properties: {
     description: 'Runbook to backup MySQL database to Azure Storage for long-term retention. See https://techcommunity.microsoft.com/blog/adformysql/azure-database-for-mysql-extending-long-term-retention-by-using-containers/3065164'
-    runbookType: 'PowerShell72'
+    runbookType: 'PowerShell'
     runtimeEnvironment: runtimeEnvironment.name
     logVerbose: true
     logProgress: true

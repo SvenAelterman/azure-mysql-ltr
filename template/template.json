@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "7382198586936735418"
+      "templateHash": "8368647599851990767"
     }
   },
   "parameters": {
@@ -763,7 +763,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "10471508466994688915"
+              "templateHash": "13399762029650461197"
             }
           },
           "parameters": {
@@ -872,7 +872,7 @@
               "location": "[parameters('location')]",
               "properties": {
                 "description": "Runbook to backup MySQL database to Azure Storage for long-term retention. See https://techcommunity.microsoft.com/blog/adformysql/azure-database-for-mysql-extending-long-term-retention-by-using-containers/3065164",
-                "runbookType": "PowerShell72",
+                "runbookType": "PowerShell",
                 "runtimeEnvironment": "PowerShell-76-Custom",
                 "logVerbose": true,
                 "logProgress": true,

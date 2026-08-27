@@ -2,6 +2,8 @@ Param(
     [Parameter(Mandatory = $true)]
     [string] $ManagedIdentityClientId,
     [Parameter(Mandatory = $true)]
+    [string] $ManagedIdentityResourceId,
+    [Parameter(Mandatory = $true)]
     [string] $ContainerResourceGroupName,
     [Parameter(Mandatory = $true)]
     [string] $DatabaseHostName,
@@ -11,6 +13,8 @@ Param(
     [string] $StorageAccountName,
     [Parameter(Mandatory = $true)]
     [string] $BackupFileShareName,
+    [Parameter(Mandatory = $true)]
+    [string] $BackupBlobContainerName,
     [Parameter(Mandatory = $true)]
     [string] $ContainerInstanceSubnetResourceId,
     [Parameter(Mandatory = $true)]
@@ -43,9 +47,9 @@ $filename = "--result-file=/data/backups/dumps-" + $BackupJobTimeStamp + ".sql"
 $h1 = "--host=" + $DatabaseHostName
 $user = "--user=" + $MySQLUsername
 $sqlPassword = "--password=" + $MySQLPassword
-$dbnamearray = $DatabaseNames.split(" ")
+$dbnamearray = $DatabaseNames.Split(" ", [System.StringSplitOptions]::RemoveEmptyEntries)
 
-$cmd = "mysqldump", "--opt", "--single-transaction", $h1, $user, $sqlPassword, $filename, "--databases"
+$cmd = "/usr/local/bin/backup-and-upload.sh", "--opt", "--single-transaction", $h1, $user, $sqlPassword, $filename, "--databases"
 
 foreach ($names in $dbnamearray) {
     $cmd += $names
@@ -65,19 +69,30 @@ $ContainerRegistryUsername = $ContainerRegistryCredential.UserName
 $ContainerRegistryPassword = ConvertTo-SecureString ($ContainerRegistryCredential.GetNetworkCredential().Password) -AsPlainText -Force
 $ImageRegistryCredential = New-AzContainerGroupImageRegistryCredentialObject -Server $ContainerRegistryUrl -Username $ContainerRegistryUsername -Password $ContainerRegistryPassword
 
+$EnvironmentVariables = @(
+    (New-AzContainerInstanceEnvironmentVariableObject -Name "STORAGE_ACCOUNT_NAME" -Value $StorageAccountName),
+    (New-AzContainerInstanceEnvironmentVariableObject -Name "BLOB_CONTAINER_NAME" -Value $BackupBlobContainerName),
+    (New-AzContainerInstanceEnvironmentVariableObject -Name "MANAGED_IDENTITY_CLIENT_ID" -Value $ManagedIdentityClientId)
+)
+
 # Create the container instance object
 $Container = New-AzContainerInstanceObject -Name $ContainerName -Image "$ContainerRegistryUrl/azure-mysql-ltr/mysql-ltr-dump:latest" -VolumeMount $VolumeMount `
-    -Command $cmd
+    -Command $cmd -EnvironmentVariable $EnvironmentVariables
 
 $SubnetId = @{
     Id   = $ContainerInstanceSubnetResourceId
     Name = "ContainerSubnet"   
 }
+
+$ContainerGroupIdentity = @{}
+$ContainerGroupIdentity[$ManagedIdentityResourceId] = @{}
+
 # Deploy the container in a container group
 Write-Output "Creating container..."
 $ContainerGroup = New-AzContainerGroup -ResourceGroupName $ContainerResourceGroupName -Name $ContainerName -Location $Location -Container $Container -Volume $Volume `
     -RestartPolicy Never -OSType Linux -SubnetId $SubnetId `
-    -ImageRegistryCredential $ImageRegistryCredential
+    -ImageRegistryCredential $ImageRegistryCredential `
+    -IdentityType UserAssigned -IdentityUserAssignedIdentity $ContainerGroupIdentity
 
 while ($true) {
     $Status = (Get-AzContainerGroup -Name $ContainerName -ResourceGroupName $ContainerResourceGroupName | Select-Object -Property @{Name = "Status"; Expression = { $_.InstanceViewState } }).Status

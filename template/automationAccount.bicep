@@ -9,6 +9,7 @@ param databaseHostName string
 param databaseNamesForBackup array
 param storageAccountName string
 param backupFileShareName string
+param backupBlobContainerName string
 param containerRegistryLoginServer string
 param uamiResourceId string
 param enableAvmTelemetry bool
@@ -86,6 +87,7 @@ module automationAccountModule 'br/public:avm/res/automation/automation-account:
           DatabaseNames: join(databaseNamesForBackup, ' ')
           StorageAccountName: storageAccountName
           BackupFileShareName: backupFileShareName
+          BackupBlobContainerName: backupBlobContainerName
           ContainerInstanceSubnetResourceId: containerInstanceSubnetResourceId
           ContainerRegistryUrl: containerRegistryLoginServer
           Location: location

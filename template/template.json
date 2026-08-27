@@ -30,6 +30,10 @@
       "type": "string",
       "defaultValue": "backup-file-share"
     },
+    "backupBlobContainerName": {
+      "type": "string",
+      "defaultValue": "backup-blob-container"
+    },
     "scriptLocation": {
       "type": "string",
       "defaultValue": "[deployment().properties.templateLink.uri]"
@@ -46,6 +50,12 @@
       "type": "string",
       "metadata": {
         "description": "The private DNS zone must be linked to the virtual network already."
+      }
+    },
+    "blobPrivateDnsZoneResourceId": {
+      "type": "string",
+      "metadata": {
+        "description": "The blob private DNS zone must be linked to the virtual network already."
       }
     },
     "privateEndpointSubnetResourceId": {
@@ -675,6 +685,9 @@
           "backupFileShareName": {
             "value": "[parameters('backupFileShareName')]"
           },
+          "backupBlobContainerName": {
+            "value": "[parameters('backupBlobContainerName')]"
+          },
           "containerRegistryLoginServer": {
             "value": "[reference('containerRegistryModule').outputs.loginServer.value]"
           },
@@ -737,6 +750,9 @@
               "type": "string"
             },
             "backupFileShareName": {
+              "type": "string"
+            },
+            "backupBlobContainerName": {
               "type": "string"
             },
             "containerRegistryLoginServer": {
@@ -844,11 +860,13 @@
                         "scheduleName": "[variables('scheduleName')]",
                         "parameters": {
                           "ManagedIdentityClientId": "[parameters('uamiClientId')]",
+                          "ManagedIdentityResourceId": "[parameters('uamiResourceId')]",
                           "ContainerResourceGroupName": "[resourceGroup().name]",
                           "DatabaseHostName": "[parameters('databaseHostName')]",
                           "DatabaseNames": "[join(parameters('databaseNamesForBackup'), ' ')]",
                           "StorageAccountName": "[parameters('storageAccountName')]",
                           "BackupFileShareName": "[parameters('backupFileShareName')]",
+                          "BackupBlobContainerName": "[parameters('backupBlobContainerName')]",
                           "ContainerInstanceSubnetResourceId": "[parameters('containerInstanceSubnetResourceId')]",
                           "ContainerRegistryUrl": "[parameters('containerRegistryLoginServer')]",
                           "Location": "[parameters('location')]"
@@ -5587,6 +5605,16 @@
               ]
             }
           },
+          "blobServices": {
+            "value": {
+              "containers": [
+                {
+                  "name": "[parameters('backupBlobContainerName')]",
+                  "publicAccess": "None"
+                }
+              ]
+            }
+          },
           "privateEndpoints": {
             "value": [
               {
@@ -5599,6 +5627,17 @@
                 },
                 "subnetResourceId": "[parameters('privateEndpointSubnetResourceId')]",
                 "service": "file"
+              },
+              {
+                "privateDnsZoneGroup": {
+                  "privateDnsZoneGroupConfigs": [
+                    {
+                      "privateDnsZoneResourceId": "[parameters('blobPrivateDnsZoneResourceId')]"
+                    }
+                  ]
+                },
+                "subnetResourceId": "[parameters('privateEndpointSubnetResourceId')]",
+                "service": "blob"
               }
             ]
           },
@@ -5607,6 +5646,16 @@
               {
                 "principalId": "[reference('userAssignedIdentityModule').outputs.principalId.value]",
                 "roleDefinitionIdOrName": "Storage Account Key Operator Service Role",
+                "principalType": "ServicePrincipal"
+              },
+              {
+                "principalId": "[reference('userAssignedIdentityModule').outputs.principalId.value]",
+                "roleDefinitionIdOrName": "Storage File Data SMB Share Reader",
+                "principalType": "ServicePrincipal"
+              },
+              {
+                "principalId": "[reference('userAssignedIdentityModule').outputs.principalId.value]",
+                "roleDefinitionIdOrName": "Storage Blob Data Contributor",
                 "principalType": "ServicePrincipal"
               },
               {

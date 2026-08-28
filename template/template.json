@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "8368647599851990767"
+      "templateHash": "5011838602072001949"
     }
   },
   "parameters": {
@@ -45,11 +45,18 @@
         "description": "The name of the file share to be created in the storage account for storing the backups."
       }
     },
-    "backupBlobContainerName": {
-      "type": "string",
-      "defaultValue": "backup-blob-container",
+    "backupBlobContainerNames": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "defaultValue": [
+        "backup-weekly-container",
+        "backup-monthly-container",
+        "backup-yearly-container"
+      ],
       "metadata": {
-        "description": "The name of the blob container to be created in the storage account for storing backup copies."
+        "description": "The names of the blob container to be created in the storage account for storing backup copies. Specify one container per schedule, in the same order. You can use the same container for multiple schedules by repeating the name."
       }
     },
     "scriptLocation": {
@@ -110,20 +117,6 @@
         "description": "The password for the MySQL server."
       }
     },
-    "scheduleStartDate": {
-      "type": "string",
-      "defaultValue": "[dateTimeAdd(utcNow(), 'P1D', 'yyyy-MM-dd')]",
-      "metadata": {
-        "description": "The date when the backup schedule should start. Defaults to tomorrow."
-      }
-    },
-    "scheduleStartTimeUtc": {
-      "type": "string",
-      "defaultValue": "06:00:00",
-      "metadata": {
-        "description": "The time when the backup schedule should start, in UTC. Defaults to 6 AM UTC."
-      }
-    },
     "databaseNamesForBackup": {
       "type": "array",
       "defaultValue": [
@@ -137,6 +130,64 @@
       "type": "string",
       "metadata": {
         "description": "The hostname of the MySQL server to be backed up."
+      }
+    },
+    "scheduleTimeZone": {
+      "type": "string",
+      "defaultValue": "America/New_York",
+      "metadata": {
+        "description": "The name of the time zone (IANA TZ identifier) used for the schedule. Defaults to \"America/New_York\"."
+      }
+    },
+    "automationSchedules": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "defaultValue": [
+        {
+          "name": "WeeklyBackupSchedule",
+          "description": "Schedule to run every week at 2 AM Eastern.",
+          "frequency": "Week",
+          "interval": 1,
+          "startTime": "[format('{0}T06:00:00', dateTimeAdd(utcNow(), 'P1D', 'yyyy-MM-dd'))]",
+          "timeZone": "[parameters('scheduleTimeZone')]",
+          "advancedSchedule": {
+            "weekDays": [
+              "Sunday"
+            ]
+          }
+        },
+        {
+          "name": "MonthlyBackupSchedule",
+          "description": "Schedule to run every month on the first Sunday at 2 AM Eastern.",
+          "frequency": "Month",
+          "interval": 1,
+          "advancedSchedule": {
+            "monthlyOccurrence": {
+              "dayOfWeek": "Sunday",
+              "occurrence": 1
+            }
+          },
+          "startTime": "[format('{0}T06:00:00', dateTimeAdd(utcNow(), 'P1D', 'yyyy-MM-dd'))]",
+          "timeZone": "[parameters('scheduleTimeZone')]"
+        },
+        {
+          "name": "YearlyBackupSchedule",
+          "description": "Schedule to run every year on the first Sunday of January at 2 AM Eastern.",
+          "frequency": "Month",
+          "interval": 12,
+          "advancedSchedule": {
+            "monthDays": [
+              1
+            ]
+          },
+          "startTime": "2027-01-01T06:00:00",
+          "timeZone": "[parameters('scheduleTimeZone')]"
+        }
+      ],
+      "metadata": {
+        "description": "The schedules to create in the Automation Account. The runbook will be executed according to each schedule."
       }
     }
   },
@@ -709,12 +760,6 @@
           "location": {
             "value": "[parameters('location')]"
           },
-          "scheduleStartDate": {
-            "value": "[parameters('scheduleStartDate')]"
-          },
-          "scheduleStartTimeUtc": {
-            "value": "[parameters('scheduleStartTimeUtc')]"
-          },
           "uamiClientId": {
             "value": "[reference('userAssignedIdentityModule').outputs.clientId.value]"
           },
@@ -733,8 +778,8 @@
           "backupFileShareName": {
             "value": "[parameters('backupFileShareName')]"
           },
-          "backupBlobContainerName": {
-            "value": "[parameters('backupBlobContainerName')]"
+          "backupBlobContainerNames": {
+            "value": "[parameters('backupBlobContainerNames')]"
           },
           "containerRegistryLoginServer": {
             "value": "[reference('containerRegistryModule').outputs.loginServer.value]"
@@ -751,6 +796,9 @@
           "enableAvmTelemetry": {
             "value": "[parameters('enableAvmTelemetry')]"
           },
+          "schedules": {
+            "value": "[parameters('automationSchedules')]"
+          },
           "tags": {
             "value": "[parameters('tags')]"
           }
@@ -763,7 +811,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "13399762029650461197"
+              "templateHash": "17750392357218701658"
             }
           },
           "parameters": {
@@ -777,12 +825,6 @@
               "type": "string"
             },
             "location": {
-              "type": "string"
-            },
-            "scheduleStartDate": {
-              "type": "string"
-            },
-            "scheduleStartTimeUtc": {
               "type": "string"
             },
             "uamiClientId": {
@@ -800,8 +842,11 @@
             "backupFileShareName": {
               "type": "string"
             },
-            "backupBlobContainerName": {
-              "type": "string"
+            "backupBlobContainerNames": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             },
             "containerRegistryLoginServer": {
               "type": "string"
@@ -819,6 +864,12 @@
             "acrName": {
               "type": "string"
             },
+            "schedules": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            },
             "mySqlUsername": {
               "type": "securestring"
             },
@@ -827,8 +878,7 @@
             }
           },
           "variables": {
-            "runBookName": "BackupMySqlDatabase",
-            "scheduleName": "WeeklyOnSundaySchedule"
+            "runBookName": "BackupMySqlDatabase"
           },
           "resources": {
             "acr": {
@@ -887,12 +937,16 @@
               ]
             },
             "jobSchedules": {
+              "copy": {
+                "name": "jobSchedules",
+                "count": "[length(parameters('schedules'))]"
+              },
               "type": "Microsoft.Automation/automationAccounts/jobSchedules",
               "apiVersion": "2024-10-23",
-              "name": "[format('{0}/{1}', parameters('automationAccountName'), guid(parameters('automationAccountName'), variables('runBookName'), variables('scheduleName')))]",
+              "name": "[format('{0}/{1}', parameters('automationAccountName'), guid(parameters('automationAccountName'), variables('runBookName'), parameters('schedules')[copyIndex()].name))]",
               "properties": {
                 "schedule": {
-                  "name": "[variables('scheduleName')]"
+                  "name": "[parameters('schedules')[copyIndex()].name]"
                 },
                 "runbook": {
                   "name": "[variables('runBookName')]"
@@ -905,7 +959,7 @@
                   "DatabaseNames": "[join(parameters('databaseNamesForBackup'), ' ')]",
                   "StorageAccountName": "[parameters('storageAccountName')]",
                   "BackupFileShareName": "[parameters('backupFileShareName')]",
-                  "BackupBlobContainerName": "[parameters('backupBlobContainerName')]",
+                  "BackupBlobContainerName": "[parameters('backupBlobContainerNames')[copyIndex()]]",
                   "ContainerInstanceSubnetResourceId": "[parameters('containerInstanceSubnetResourceId')]",
                   "ContainerRegistryUrl": "[parameters('containerRegistryLoginServer')]",
                   "Location": "[parameters('location')]"
@@ -952,21 +1006,7 @@
                     ]
                   },
                   "schedules": {
-                    "value": [
-                      {
-                        "name": "[variables('scheduleName')]",
-                        "description": "Schedule to run every week at 2 AM UTC.",
-                        "frequency": "Week",
-                        "interval": 1,
-                        "startTime": "[format('{0}T{1}', parameters('scheduleStartDate'), parameters('scheduleStartTimeUtc'))]",
-                        "timeZone": "America/New_York",
-                        "advancedSchedule": {
-                          "weekDays": [
-                            "Sunday"
-                          ]
-                        }
-                      }
-                    ]
+                    "value": "[parameters('schedules')]"
                   },
                   "managedIdentities": {
                     "value": {
@@ -5701,10 +5741,14 @@
           },
           "blobServices": {
             "value": {
-              "containers": [
+              "copy": [
                 {
-                  "name": "[parameters('backupBlobContainerName')]",
-                  "publicAccess": "None"
+                  "name": "containers",
+                  "count": "[length(parameters('backupBlobContainerNames'))]",
+                  "input": {
+                    "name": "[parameters('backupBlobContainerNames')[copyIndex('containers')]]",
+                    "publicAccess": "None"
+                  }
                 }
               ]
             }

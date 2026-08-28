@@ -2,19 +2,19 @@ param automationAccountName string
 param containerInstanceSubnetResourceId string
 param scriptLocation string
 param location string
-param scheduleStartDate string
-param scheduleStartTimeUtc string
 param uamiClientId string
 param databaseHostName string
 param databaseNamesForBackup array
 param storageAccountName string
 param backupFileShareName string
-param backupBlobContainerName string
+param backupBlobContainerNames string[]
 param containerRegistryLoginServer string
 param uamiResourceId string
 param enableAvmTelemetry bool
 param tags object?
 param acrName string
+
+param schedules object[]
 
 @secure()
 param mySqlUsername string
@@ -22,7 +22,6 @@ param mySqlUsername string
 param mySqlPassword string
 
 var runBookName = 'BackupMySqlDatabase'
-var scheduleName = 'WeeklyOnSundaySchedule'
 
 resource acr 'Microsoft.ContainerRegistry/registries@2025-11-01' existing = {
   name: acrName
@@ -50,51 +49,7 @@ module automationAccountModule 'br/public:avm/res/automation/automation-account:
       }
     ]
 
-    // runbooks: [
-    //   {
-    //     name: runBookName
-    //     description: 'Runbook to backup MySQL database to Azure Storage for long-term retention. See https://techcommunity.microsoft.com/blog/adformysql/azure-database-for-mysql-extending-long-term-retention-by-using-containers/3065164'
-    //     type: 'PowerShell72'
-    //     uri: uri(scriptLocation, 'runbook/backupmysql.ps1')
-    //     version: '1.0.0.0'
-    //   }
-    // ]
-
-    schedules: [
-      {
-        name: scheduleName
-        description: 'Schedule to run every week at 2 AM UTC.'
-        frequency: 'Week'
-        interval: 1
-        startTime: '${scheduleStartDate}T${scheduleStartTimeUtc}'
-        timeZone: 'America/New_York'
-        advancedSchedule: {
-          weekDays: ['Sunday']
-        }
-      }
-    ]
-
-    // jobSchedules: [
-    //   {
-    //     description: 'Schedule to run the ${runBookName} runbook based on the ${scheduleName} schedule.'
-    //     runbookName: runBookName
-    //     scheduleName: scheduleName
-
-    //     parameters: {
-    //       ManagedIdentityClientId: uamiClientId
-    //       ManagedIdentityResourceId: uamiResourceId
-    //       ContainerResourceGroupName: resourceGroup().name
-    //       DatabaseHostName: databaseHostName
-    //       DatabaseNames: join(databaseNamesForBackup, ' ')
-    //       StorageAccountName: storageAccountName
-    //       BackupFileShareName: backupFileShareName
-    //       BackupBlobContainerName: backupBlobContainerName
-    //       ContainerInstanceSubnetResourceId: containerInstanceSubnetResourceId
-    //       ContainerRegistryUrl: containerRegistryLoginServer
-    //       Location: location
-    //     }
-    //   }
-    // ]
+    schedules: schedules
 
     managedIdentities: {
       systemAssigned: true
@@ -148,28 +103,30 @@ resource runbook 'Microsoft.Automation/automationAccounts/runbooks@2024-10-23' =
   }
 }
 
-resource jobSchedules 'Microsoft.Automation/automationAccounts/jobSchedules@2024-10-23' = {
-  name: guid(automationAccountName, runBookName, scheduleName)
-  parent: automationAccount
-  properties: {
-    schedule: {
-      name: scheduleName
-    }
-    runbook: {
-      name: runbook.name
-    }
-    parameters: {
-      ManagedIdentityClientId: uamiClientId
-      ManagedIdentityResourceId: uamiResourceId
-      ContainerResourceGroupName: resourceGroup().name
-      DatabaseHostName: databaseHostName
-      DatabaseNames: join(databaseNamesForBackup, ' ')
-      StorageAccountName: storageAccountName
-      BackupFileShareName: backupFileShareName
-      BackupBlobContainerName: backupBlobContainerName
-      ContainerInstanceSubnetResourceId: containerInstanceSubnetResourceId
-      ContainerRegistryUrl: containerRegistryLoginServer
-      Location: location
+resource jobSchedules 'Microsoft.Automation/automationAccounts/jobSchedules@2024-10-23' = [
+  for (schedule, i) in schedules: {
+    name: guid(automationAccountName, runBookName, schedule.name)
+    parent: automationAccount
+    properties: {
+      schedule: {
+        name: schedule.name
+      }
+      runbook: {
+        name: runbook.name
+      }
+      parameters: {
+        ManagedIdentityClientId: uamiClientId
+        ManagedIdentityResourceId: uamiResourceId
+        ContainerResourceGroupName: resourceGroup().name
+        DatabaseHostName: databaseHostName
+        DatabaseNames: join(databaseNamesForBackup, ' ')
+        StorageAccountName: storageAccountName
+        BackupFileShareName: backupFileShareName
+        BackupBlobContainerName: backupBlobContainerNames[i]
+        ContainerInstanceSubnetResourceId: containerInstanceSubnetResourceId
+        ContainerRegistryUrl: containerRegistryLoginServer
+        Location: location
+      }
     }
   }
-}
+]

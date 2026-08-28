@@ -8,8 +8,12 @@ param userAssignedIdentityName string = 'MySQLLTR-prod-id-${location}-01'
 param location string = resourceGroup().location
 @description('The name of the file share to be created in the storage account for storing the backups.')
 param backupFileShareName string = 'backup-file-share'
-@description('The name of the blob container to be created in the storage account for storing backup copies.')
-param backupBlobContainerName string = 'backup-blob-container'
+@description('The names of the blob container to be created in the storage account for storing backup copies. Specify one container per schedule, in the same order. You can use the same container for multiple schedules by repeating the name.')
+param backupBlobContainerNames string[] = [
+  'backup-weekly-container'
+  'backup-monthly-container'
+  'backup-yearly-container'
+]
 @description('The URI of the PowerShell script file that is the runbook code.')
 param scriptLocation string = deployment().properties.templateLink.uri
 
@@ -33,14 +37,60 @@ param mySqlUsername string = 'sqladmin'
 @secure()
 param mySqlPassword string
 
-@description('The date when the backup schedule should start. Defaults to tomorrow.')
-param scheduleStartDate string = dateTimeAdd(utcNow(), 'P1D', 'yyyy-MM-dd')
-@description('The time when the backup schedule should start, in UTC. Defaults to 6 AM UTC.')
-param scheduleStartTimeUtc string = '06:00:00' // 2 AM Eastern Time
+// @description('The date when the backup schedule should start. Defaults to tomorrow.')
+// param scheduleStartDate string = dateTimeAdd(utcNow(), 'P1D', 'yyyy-MM-dd')
+// @description('The time when the backup schedule should start, in UTC. Defaults to 6 AM UTC.')
+// param scheduleStartTimeUtc string = '06:00:00' // 2 AM Eastern Time
 @description('The names of the databases to be backed up. Defaults to ["redcapdb"].')
 param databaseNamesForBackup array = ['redcapdb']
 @description('The hostname of the MySQL server to be backed up.')
 param databaseHostName string
+
+@description('The name of the time zone (IANA TZ identifier) used for the schedule. Defaults to "America/New_York".')
+param scheduleTimeZone string = 'America/New_York'
+
+@description('The schedules to create in the Automation Account. The runbook will be executed according to each schedule.')
+param automationSchedules object[] = [
+  {
+    name: 'WeeklyBackupSchedule'
+    description: 'Schedule to run every week at 2 AM Eastern.'
+    frequency: 'Week'
+    interval: 1
+    startTime: '${dateTimeAdd(utcNow(), 'P1D', 'yyyy-MM-dd')}T06:00:00' // 2 AM Eastern, tomorrow
+    timeZone: scheduleTimeZone
+    advancedSchedule: {
+      weekDays: ['Sunday']
+    }
+  }
+  {
+    name: 'MonthlyBackupSchedule'
+    description: 'Schedule to run every month on the first Sunday at 2 AM Eastern.'
+    frequency: 'Month'
+    // Every month
+    interval: 1
+    advancedSchedule: {
+      monthlyOccurrence: {
+        // First Sunday of the month
+        dayOfWeek: 'Sunday'
+        occurrence: 1
+      }
+    }
+    startTime: '${dateTimeAdd(utcNow(), 'P1D', 'yyyy-MM-dd')}T06:00:00'
+    timeZone: scheduleTimeZone
+  }
+  {
+    name: 'YearlyBackupSchedule'
+    description: 'Schedule to run every year on the first Sunday of January at 2 AM Eastern.'
+    // Every 12 months equals yearly
+    frequency: 'Month'
+    interval: 12
+    advancedSchedule: {
+      monthDays: [1]
+    }
+    startTime: '2027-01-01T06:00:00'
+    timeZone: scheduleTimeZone
+  }
+]
 
 module userAssignedIdentityModule 'br/public:avm/res/managed-identity/user-assigned-identity:0.6.0' = {
   name: 'userAssignedIdentityModule'
@@ -60,20 +110,19 @@ module automationAccountOuterModule 'automationAccount.bicep' = {
     containerInstanceSubnetResourceId: containerInstanceSubnetResourceId
     scriptLocation: scriptLocation
     location: location
-    scheduleStartDate: scheduleStartDate
-    scheduleStartTimeUtc: scheduleStartTimeUtc
     uamiClientId: userAssignedIdentityModule.outputs.clientId
     uamiResourceId: userAssignedIdentityModule.outputs.resourceId
     databaseHostName: databaseHostName
     databaseNamesForBackup: databaseNamesForBackup
     storageAccountName: storageAccountName
     backupFileShareName: backupFileShareName
-    backupBlobContainerName: backupBlobContainerName
+    backupBlobContainerNames: backupBlobContainerNames
     containerRegistryLoginServer: containerRegistryModule.outputs.loginServer
     mySqlUsername: mySqlUsername
     mySqlPassword: mySqlPassword
     acrName: containerRegistryModule.outputs.name
     enableAvmTelemetry: enableAvmTelemetry
+    schedules: automationSchedules
     tags: tags
   }
 }
@@ -107,7 +156,7 @@ module storageAccountModule 'br/public:avm/res/storage/storage-account:0.33.0' =
 
     blobServices: {
       containers: [
-        {
+        for backupBlobContainerName in backupBlobContainerNames: {
           name: backupBlobContainerName
           publicAccess: 'None'
         }

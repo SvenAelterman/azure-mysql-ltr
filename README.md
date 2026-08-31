@@ -1,18 +1,18 @@
 # Azure Database for MySQL long-term retention
 
-This repository automates logical backups of Azure Database for MySQL databases for long-term retention. An Azure Automation runbook starts an Azure Container Instance that runs `mysqldump`, writes the resulting SQL dump to an Azure Files share, and copies it to Azure Blob Storage.
+This repository automates logical backups of Azure Database for MySQL databases for long-term retention. Azure Automation starts a runbook that creates an Azure Container Instance, runs `mysqldump`, writes the resulting SQL dump to an Azure Files share, and copies it to the Blob Storage container associated with the schedule that triggered the runbook.
 
 ## Architecture
 
 The Bicep template deploys and configures:
 
-- An Azure Automation account with a PowerShell 7.2 runbook and weekly schedule
+- An Azure Automation account with a PowerShell 7.6 runbook and customizable weekly, monthly, and yearly schedules
 - A user-assigned managed identity and the role assignments needed by the runbook
-- A geo-redundant storage account, Azure Files share, blob container, and private endpoints
+- A geo-redundant storage account, Azure Files share, per-schedule blob containers, and private endpoints
 - An Azure Container Registry and ACR task that builds the image from this repository
 - Automation credentials for MySQL and the container registry
 
-At the scheduled time, the runbook creates a container group in the supplied delegated subnet. The container mounts the file share, runs `mysqldump` for the configured databases, copies the generated dump to the blob container with `azcopy` and the user-assigned managed identity, and stops after the backup completes. Backup files are named `dumps-<timestamp>.sql`.
+At a scheduled time, the runbook creates a container group in the supplied delegated subnet. The container mounts the file share, runs `mysqldump` for the configured databases, copies the generated dump to the blob container mapped to that schedule with `azcopy` and the user-assigned managed identity, and stops after the backup completes. Backup files are named `dumps-<timestamp>.sql`.
 
 ## Prerequisites
 
@@ -52,7 +52,7 @@ The entry point is [`template/template.bicep`](template/template.bicep).
 | `userAssignedIdentityName` | string | No | `MySQLLTR-prod-id-<location>-01` | Name of the user-assigned managed identity used by the runbook and container workflow. |
 | `location` | string | No | Resource group location | Azure region for the deployed resources. |
 | `backupFileShareName` | string | No | `backup-file-share` | Name of the Azure Files share where SQL dumps are stored. |
-| `backupBlobContainerName` | string | No | `backup-blob-container` | Name of the blob container where SQL dumps are copied. |
+| `backupBlobContainerNames` | array of strings | No | `['backup-weekly-container', 'backup-monthly-container', 'backup-yearly-container']` | Blob containers where SQL dumps are copied. Entries map by position to `automationSchedules`; repeat a name to send multiple schedules to the same container. |
 | `scriptLocation` | string | No | Linked template URI | Base URI used to locate `runbook/backupmysql.ps1`. Override it when the template is not deployed from the linked ARM template. |
 | `enableAvmTelemetry` | bool | No | `true` | Enables telemetry for the Azure Verified Modules used by the deployment. |
 | `tags` | object | No | `null` | Tags applied to deployed resources. |
@@ -62,14 +62,24 @@ The entry point is [`template/template.bicep`](template/template.bicep).
 | `containerInstanceSubnetResourceId` | string | Yes | - | Resource ID of the subnet used by the container group. It must be delegated to `Microsoft.ContainerInstance/containerGroups`. |
 | `mySqlUsername` | string | No | `sqladmin` | MySQL account used by `mysqldump`. |
 | `mySqlPassword` | secure string | Yes | - | Password for the MySQL account. It is stored as an encrypted Automation credential. |
-| `scheduleStartDate` | string | No | Tomorrow (`yyyy-MM-dd`) | Date on which the weekly backup schedule starts. |
-| `scheduleStartTimeUtc` | string | No | `06:00:00` | Start time passed to the Automation schedule. The schedule is configured with the `America/New_York` time zone. |
 | `databaseNamesForBackup` | array | No | `['redcapdb']` | Names of the databases included in each dump. |
 | `databaseHostName` | string | Yes | - | Fully qualified hostname of the Azure Database for MySQL server. |
+| `scheduleTimeZone` | string | No | `America/New_York` | IANA time-zone identifier used by the default schedules. Can also be referenced by custom schedule definitions. |
+| `automationSchedules` | array of objects | No | Weekly, monthly, and yearly schedules | Azure Automation schedule definitions. Each object can customize the schedule name, description, frequency, interval, start time, time zone, and advanced schedule settings. |
 
-## Backup schedule and retention
+## Backup schedules and destinations
 
-The template schedules the runbook weekly on Sunday. Azure Files and Blob Storage store the backup until it is deleted manually or by a retention process that you configure separately. The template enables a seven-day soft-delete retention period for the file share, but it does not automatically expire individual backup files.
+By default, the template creates three schedules:
+
+- `WeeklyBackupSchedule` runs every Sunday.
+- `MonthlyBackupSchedule` runs on the first Sunday of every month.
+- `YearlyBackupSchedule` runs every 12 months beginning January 1, 2027.
+
+Use `scheduleTimeZone` to change the time zone used by the default schedules. For full control, replace `automationSchedules` with Azure Automation schedule objects that specify properties such as `frequency`, `interval`, `startTime`, `timeZone`, and `advancedSchedule`.
+
+Each entry in `automationSchedules` is paired with the entry at the same array position in `backupBlobContainerNames`. The two arrays must therefore contain the same number of entries. This mapping makes it possible to use separate containers for different retention classes—for example, weekly, monthly, and yearly backups—or to route multiple schedules to one container by repeating its name.
+
+Azure Files and Blob Storage retain backups until they are deleted manually or by a retention process that you configure separately. The template enables a seven-day soft-delete retention period for the file share, but it does not automatically expire individual backup files. Configure Blob Storage lifecycle-management rules separately if each schedule or container requires a different retention period.
 
 Runbook job output includes the container status and logs for troubleshooting. The generated container group is named `mysqldumpci1` in the deployment resource group.
 

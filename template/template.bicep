@@ -1,12 +1,20 @@
 @description('The resource name of the storage account to be created for storing the backups.')
+@minLength(3)
+@maxLength(24)
 param storageAccountName string = 'mysqlltrprodst01${take(uniqueString(resourceGroup().id), 4)}'
 @description('The resource name of the Azure Automation account to be created for running the backup runbook.')
+@minLength(6)
+@maxLength(50)
 param automationAccountName string = 'MySQLLTR-prod-aa-${location}-01'
 @description('The resource name of the user-assigned managed identity to be created for the container instance.')
+@minLength(3)
+@maxLength(128)
 param userAssignedIdentityName string = 'MySQLLTR-prod-id-${location}-01'
 @description('The Azure region where all resources should be deployed. Defaults to the resource group location.')
 param location string = resourceGroup().location
 @description('The name of the file share to be created in the storage account for storing the backups.')
+@minLength(3)
+@maxLength(63)
 param backupFileShareName string = 'backup-file-share'
 @description('The names of the blob container to be created in the storage account for storing backup copies. Specify one container per schedule, in the same order. You can use the same container for multiple schedules by repeating the name.')
 param backupBlobContainerNames string[] = [

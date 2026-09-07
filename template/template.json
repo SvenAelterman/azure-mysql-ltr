@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "18012306675255731576"
+      "templateHash": "7321287937455324314"
     }
   },
   "parameters": {
@@ -20740,7 +20740,7 @@
             "value": "pe"
           },
           "resourceTypeReplacementOverride": {
-            "value": "pe-st-blob"
+            "value": "pe-st-file"
           },
           "location": {
             "value": "[parameters('location')]"

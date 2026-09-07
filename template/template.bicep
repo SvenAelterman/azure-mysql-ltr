@@ -121,7 +121,6 @@ module automationAccountOuterModule './modules/automationAccount.bicep' = {
     storageAccountName: storageAccountModule.outputs.name
     backupFileShareName: backupFileShareName
     backupBlobContainerNames: backupBlobContainerNames
-    containerRegistryLoginServer: containerRegistryModule.outputs.loginServer
     mySqlUsername: mySqlUsername
     mySqlPassword: mySqlPassword
     acrName: containerRegistryModule.outputs.name

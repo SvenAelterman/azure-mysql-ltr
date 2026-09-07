@@ -8,7 +8,6 @@ param databaseNamesForBackup array
 param storageAccountName string
 param backupFileShareName string
 param backupBlobContainerNames string[]
-param containerRegistryLoginServer string
 param uamiResourceId string
 param enableAvmTelemetry bool
 param tags object?
@@ -27,6 +26,8 @@ resource acr 'Microsoft.ContainerRegistry/registries@2025-11-01' existing = {
   name: acrName
 }
 
+// Using local copy of the AVM automation account module while
+// waiting for support for Runtime Environments
 module automationAccountModule 'br/public:avm/res/automation/automation-account:0.19.2' = {
   name: 'automationAccountModule'
   params: {
@@ -124,7 +125,7 @@ resource jobSchedules 'Microsoft.Automation/automationAccounts/jobSchedules@2024
         BackupFileShareName: backupFileShareName
         BackupBlobContainerName: backupBlobContainerNames[i]
         ContainerInstanceSubnetResourceId: containerInstanceSubnetResourceId
-        ContainerRegistryUrl: containerRegistryLoginServer
+        ContainerRegistryUrl: acr.properties.loginServer
         Location: location
       }
     }

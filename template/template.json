@@ -6,29 +6,36 @@
     "_generator": {
       "name": "bicep",
       "version": "0.46.1.21595",
-      "templateHash": "5011838602072001949"
+      "templateHash": "18012306675255731576"
     }
   },
   "parameters": {
-    "storageAccountName": {
+    "namingConvention": {
       "type": "string",
-      "defaultValue": "[format('mysqlltrprodst01{0}', take(uniqueString(resourceGroup().id), 4))]",
+      "defaultValue": "{workloadName}-{env}-{rtype}-{loc}-{seq}",
       "metadata": {
-        "description": "The resource name of the storage account to be created for storing the backups."
+        "description": "The naming convention structure for all resources names, unless overridden. May contain the following placeholders: {workloadName}, {env}, {rtype}, {loc}, {seq}."
       }
     },
-    "automationAccountName": {
+    "workloadName": {
       "type": "string",
-      "defaultValue": "[format('MySQLLTR-prod-aa-{0}-01', parameters('location'))]",
+      "defaultValue": "mysqlltr",
       "metadata": {
-        "description": "The resource name of the Azure Automation account to be created for running the backup runbook."
+        "description": "The workload name to use in resource names. Defaults to \"mysqlltr\"."
       }
     },
-    "userAssignedIdentityName": {
+    "environment": {
       "type": "string",
-      "defaultValue": "[format('MySQLLTR-prod-id-{0}-01', parameters('location'))]",
+      "defaultValue": "prod",
       "metadata": {
-        "description": "The resource name of the user-assigned managed identity to be created for the container instance."
+        "description": "The environment name to use in resource names. Defaults to \"prod\"."
+      }
+    },
+    "sequence": {
+      "type": "int",
+      "defaultValue": 1,
+      "metadata": {
+        "description": "The sequence number to use for resource names. Defaults to 1."
       }
     },
     "location": {
@@ -41,6 +48,8 @@
     "backupFileShareName": {
       "type": "string",
       "defaultValue": "backup-file-share",
+      "minLength": 3,
+      "maxLength": 63,
       "metadata": {
         "description": "The name of the file share to be created in the storage account for storing the backups."
       }
@@ -214,7 +223,7 @@
         "mode": "Incremental",
         "parameters": {
           "name": {
-            "value": "[parameters('userAssignedIdentityName')]"
+            "value": "[reference('userAssignedIdentityNameModule').outputs.validName.value]"
           },
           "location": {
             "value": "[parameters('location')]"
@@ -736,7 +745,10 @@
             }
           }
         }
-      }
+      },
+      "dependsOn": [
+        "userAssignedIdentityNameModule"
+      ]
     },
     "automationAccountOuterModule": {
       "type": "Microsoft.Resources/deployments",
@@ -749,7 +761,7 @@
         "mode": "Incremental",
         "parameters": {
           "automationAccountName": {
-            "value": "[parameters('automationAccountName')]"
+            "value": "[reference('automationAccountNameModule').outputs.validName.value]"
           },
           "containerInstanceSubnetResourceId": {
             "value": "[parameters('containerInstanceSubnetResourceId')]"
@@ -773,16 +785,13 @@
             "value": "[parameters('databaseNamesForBackup')]"
           },
           "storageAccountName": {
-            "value": "[parameters('storageAccountName')]"
+            "value": "[reference('storageAccountModule').outputs.name.value]"
           },
           "backupFileShareName": {
             "value": "[parameters('backupFileShareName')]"
           },
           "backupBlobContainerNames": {
             "value": "[parameters('backupBlobContainerNames')]"
-          },
-          "containerRegistryLoginServer": {
-            "value": "[reference('containerRegistryModule').outputs.loginServer.value]"
           },
           "mySqlUsername": {
             "value": "[parameters('mySqlUsername')]"
@@ -811,7 +820,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.46.1.21595",
-              "templateHash": "17750392357218701658"
+              "templateHash": "2623074115343642401"
             }
           },
           "parameters": {
@@ -847,9 +856,6 @@
               "items": {
                 "type": "string"
               }
-            },
-            "containerRegistryLoginServer": {
-              "type": "string"
             },
             "uamiResourceId": {
               "type": "string"
@@ -961,11 +967,12 @@
                   "BackupFileShareName": "[parameters('backupFileShareName')]",
                   "BackupBlobContainerName": "[parameters('backupBlobContainerNames')[copyIndex()]]",
                   "ContainerInstanceSubnetResourceId": "[parameters('containerInstanceSubnetResourceId')]",
-                  "ContainerRegistryUrl": "[parameters('containerRegistryLoginServer')]",
+                  "ContainerRegistryUrl": "[reference('acr').loginServer]",
                   "Location": "[parameters('location')]"
                 }
               },
               "dependsOn": [
+                "acr",
                 "automationAccountModule",
                 "runbook"
               ]
@@ -5691,7 +5698,9 @@
         }
       },
       "dependsOn": [
+        "automationAccountNameModule",
         "containerRegistryModule",
+        "storageAccountModule",
         "userAssignedIdentityModule"
       ]
     },
@@ -5706,7 +5715,7 @@
         "mode": "Incremental",
         "parameters": {
           "name": {
-            "value": "[parameters('storageAccountName')]"
+            "value": "[reference('storageAccountNameModule').outputs.validName.value]"
           },
           "location": {
             "value": "[parameters('location')]"
@@ -5764,7 +5773,9 @@
                   ]
                 },
                 "subnetResourceId": "[parameters('privateEndpointSubnetResourceId')]",
-                "service": "file"
+                "service": "file",
+                "name": "[reference('filePrivateEndpointNameModule').outputs.validName.value]",
+                "customNetworkInterfaceName": "[reference('filePENicNameModule').outputs.validName.value]"
               },
               {
                 "privateDnsZoneGroup": {
@@ -5775,7 +5786,9 @@
                   ]
                 },
                 "subnetResourceId": "[parameters('privateEndpointSubnetResourceId')]",
-                "service": "blob"
+                "service": "blob",
+                "name": "[reference('blobPrivateEndpointNameModule').outputs.validName.value]",
+                "customNetworkInterfaceName": "[reference('blobPENicNameModule').outputs.validName.value]"
               }
             ]
           },
@@ -14129,6 +14142,11 @@
         }
       },
       "dependsOn": [
+        "blobPENicNameModule",
+        "blobPrivateEndpointNameModule",
+        "filePENicNameModule",
+        "filePrivateEndpointNameModule",
+        "storageAccountNameModule",
         "userAssignedIdentityModule"
       ]
     },
@@ -14143,7 +14161,7 @@
         "mode": "Incremental",
         "parameters": {
           "name": {
-            "value": "[format('mysqlltrprodcr01{0}', take(uniqueString(resourceGroup().id), 4))]"
+            "value": "[reference('containerRegistryNameModule').outputs.validName.value]"
           },
           "location": {
             "value": "[parameters('location')]"
@@ -18039,6 +18057,7 @@
         }
       },
       "dependsOn": [
+        "containerRegistryNameModule",
         "userAssignedIdentityModule"
       ]
     },
@@ -18483,6 +18502,3552 @@
       "dependsOn": [
         "userAssignedIdentityModule"
       ]
+    },
+    "storageAccountNameModule": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "storageAccountNameModule",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "namingConvention": {
+            "value": "[parameters('namingConvention')]"
+          },
+          "addRandomChars": {
+            "value": 4
+          },
+          "workloadName": {
+            "value": "[parameters('workloadName')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "resourceType": {
+            "value": "st"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "sequence": {
+            "value": "[parameters('sequence')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.46.1.21595",
+              "templateHash": "14043603832211409352"
+            }
+          },
+          "parameters": {
+            "namingConvention": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "A valid Azure region name or region code."
+              }
+            },
+            "resourceType": {
+              "type": "string",
+              "allowedValues": [
+                "vnet",
+                "kv",
+                "st",
+                "cr",
+                "pg",
+                "ci",
+                "mysql",
+                "app",
+                "plan",
+                "appi",
+                "uami",
+                "dplscr",
+                "log",
+                "gal",
+                "aa",
+                "pe",
+                "nic"
+              ],
+              "metadata": {
+                "description": "A valid resource type abbreviation from the list of types supported by this module."
+              }
+            },
+            "environment": {
+              "type": "string"
+            },
+            "workloadName": {
+              "type": "string"
+            },
+            "subWorkloadName": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "sequence": {
+              "type": "int"
+            },
+            "requireShorten": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, the name will always use short versions of placeholders. If false, it will only be shortened when needed to fit in the maxLength."
+              }
+            },
+            "removeSegmentSeparator": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, hyphens will be removed from the name. If false, they will only be removed if required by the resource type."
+              }
+            },
+            "segmentSeparator": {
+              "type": "string",
+              "defaultValue": "-",
+              "allowedValues": [
+                "-",
+                "_",
+                ""
+              ],
+              "metadata": {
+                "description": "The segment separator used in the `namingConvention` parameter. Default and most supported is `-`."
+              }
+            },
+            "useRemoveVowelStrategy": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, when creating a short name, vowels will first be removed from the workload name."
+              }
+            },
+            "addRandomChars": {
+              "type": "int",
+              "defaultValue": 0,
+              "maxValue": 13,
+              "metadata": {
+                "description": "The number of random characters to add to the workload name. Random characters are created by the `uniquestring()` method combining subcription ID, workload name, location, environment, sequence, resource type, and the `additionalRandomInitializer` parameter."
+              }
+            },
+            "additionalRandomInitializer": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "When using addRandomChars > 0, generated resource names will be idempotent for the same subscription, workload, resource location, environment, sequence, and resource type. If an additional discrimnator is required, provide the value here."
+              }
+            },
+            "resourceTypeReplacementOverride": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "variables": {
+            "Defs": {
+              "vnet": {
+                "lowerCase": false,
+                "maxLength": 64,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "plan": {
+                "lowerCase": false,
+                "maxLength": 60,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "app": {
+                "lowerCase": false,
+                "maxLength": 60,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "kv": {
+                "lowerCase": false,
+                "maxLength": 24,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "st": {
+                "lowerCase": true,
+                "maxLength": 24,
+                "allowedSegmentSeparators": []
+              },
+              "cr": {
+                "lowerCase": false,
+                "maxLength": 50,
+                "allowedSegmentSeparators": []
+              },
+              "pg": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "ci": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "mysql": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "appi": {
+                "lowerCase": false,
+                "maxLength": 260,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "uami": {
+                "lowerCase": false,
+                "maxLength": 128,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "dplscr": {
+                "lowerCase": false,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "log": {
+                "lowerCase": false,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "gal": {
+                "lowerCase": false,
+                "maxLength": 80,
+                "allowedSegmentSeparators": [
+                  "_",
+                  "."
+                ]
+              },
+              "aa": {
+                "lowerCase": false,
+                "maxLength": 50,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "pe": {
+                "lowerCase": false,
+                "maxLength": 64,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_",
+                  "."
+                ]
+              },
+              "nic": {
+                "lowerCase": false,
+                "maxLength": 80,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_",
+                  "."
+                ]
+              }
+            },
+            "shortLocations": {
+              "australiacentral": "acl",
+              "Australia Central": "acl",
+              "australiacentral2": "acl2",
+              "Australia Central 2": "acl2",
+              "australiaeast": "ae",
+              "Australia East": "ae",
+              "australiasoutheast": "ase",
+              "Australia Southeast": "ase",
+              "brazilsouth": "brs",
+              "Brazil South": "brs",
+              "brazilsoutheast": "bse",
+              "Brazil Southeast": "bse",
+              "centraluseuap": "ccy",
+              "Central US EUAP": "ccy",
+              "canadacentral": "cnc",
+              "Canada Central": "cnc",
+              "canadaeast": "cne",
+              "Canada East": "cne",
+              "centralus": "cus",
+              "Central US": "cus",
+              "eastasia": "ea",
+              "East Asia": "ea",
+              "eastus2euap": "ecy",
+              "East US 2 EUAP": "ecy",
+              "eastus": "eus",
+              "East US": "eus",
+              "eastus2": "eus2",
+              "East US 2": "eus2",
+              "francecentral": "frc",
+              "France Central": "frc",
+              "francesouth": "frs",
+              "France South": "frs",
+              "germanynorth": "gn",
+              "Germany North": "gn",
+              "germanywestcentral": "gwc",
+              "Germany West Central": "gwc",
+              "centralindia": "inc",
+              "Central India": "inc",
+              "southindia": "ins",
+              "South India": "ins",
+              "westindia": "inw",
+              "West India": "inw",
+              "italynorth": "itn",
+              "Italy North": "itn",
+              "japaneast": "jpe",
+              "Japan East": "jpe",
+              "japanwest": "jpw",
+              "Japan West": "jpw",
+              "jioindiacentral": "jic",
+              "Jio India Central": "jic",
+              "jioindiawest": "jiw",
+              "Jio India West": "jiw",
+              "koreacentral": "krc",
+              "Korea Central": "krc",
+              "koreasouth": "krs",
+              "Korea South": "krs",
+              "northcentralus": "ncus",
+              "North Central US": "ncus",
+              "northeurope": "ne",
+              "North Europe": "ne",
+              "norwayeast": "nwe",
+              "Norway East": "nwe",
+              "norwaywest": "nww",
+              "Norway West": "nww",
+              "qatarcentral": "qac",
+              "Qatar Central": "qac",
+              "southafricanorth": "san",
+              "South Africa North": "san",
+              "southafricawest": "saw",
+              "South Africa West": "saw",
+              "southcentralus": "scus",
+              "South Central US": "scus",
+              "swedencentral": "sdc",
+              "Sweden Central": "sdc",
+              "swedensouth": "sds",
+              "Sweden South": "sds",
+              "southeastasia": "sea",
+              "Southeast Asia": "sea",
+              "switzerlandnorth": "szn",
+              "Switzerland North": "szn",
+              "switzerlandwest": "szw",
+              "Switzerland West": "szw",
+              "uaecentral": "uac",
+              "UAE Central": "uac",
+              "uaenorth": "uan",
+              "UAE North": "uan",
+              "uksouth": "uks",
+              "UK South": "uks",
+              "ukwest": "ukw",
+              "UK West": "ukw",
+              "westcentralus": "wcus",
+              "West Central US": "wcus",
+              "westeurope": "we",
+              "West Europe": "we",
+              "westus": "wus",
+              "West US": "wus",
+              "westus2": "wus2",
+              "West US 2": "wus2",
+              "westus3": "wus3",
+              "West US 3": "wus3",
+              "usdodcentral": "udc",
+              "USDoD Central": "udc",
+              "usdodeast": "ude",
+              "USDoD East": "ude",
+              "usgovarizona": "uga",
+              "USGov Arizona": "uga",
+              "usgoviowa": "ugi",
+              "USGov Iowa": "ugi",
+              "usgovtexas": "ugt",
+              "USGov Texas": "ugt",
+              "usgovvirginia": "ugv",
+              "USGov Virginia": "ugv",
+              "usnateast": "exe",
+              "USNat East": "exe",
+              "usnatwest": "exw",
+              "USNat West": "exw",
+              "usseceast": "rxe",
+              "USSec East": "rxe",
+              "ussecwest": "rxw",
+              "USSec West": "rxw",
+              "chinanorth": "bjb",
+              "China North": "bjb",
+              "chinanorth2": "bjb2",
+              "China North 2": "bjb2",
+              "chinanorth3": "bjb3",
+              "China North 3": "bjb3",
+              "chinaeast": "sha",
+              "China East": "sha",
+              "chinaeast2": "sha2",
+              "China East 2": "sha2",
+              "chinaeast3": "sha3",
+              "China East 3": "sha3",
+              "germanycentral": "gec",
+              "Germany Central": "gec",
+              "germanynortheast": "gne",
+              "Germany North East": "gne"
+            },
+            "maxLength": "[variables('Defs')[parameters('resourceType')].maxLength]",
+            "lowerCase": "[variables('Defs')[parameters('resourceType')].lowerCase]",
+            "doRemoveSegmentSeparator": "[or(empty(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators), parameters('removeSegmentSeparator'))]",
+            "shortLocationValue": "[variables('shortLocations')[parameters('location')]]",
+            "sequenceFormatted": "[format('{0:00}', parameters('sequence'))]",
+            "randomChars": "[if(greater(parameters('addRandomChars'), 0), take(uniqueString(subscription().subscriptionId, parameters('workloadName'), parameters('location'), parameters('environment'), string(parameters('sequence')), variables('resourceTypeReplacement'), parameters('additionalRandomInitializer')), parameters('addRandomChars')), '')]",
+            "namingConventionSubProcessed": "[if(empty(parameters('subWorkloadName')), replace(parameters('namingConvention'), '-{subWorkloadName}', ''), parameters('namingConvention'))]",
+            "actualSegmentSeparator": "[if(contains(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators, parameters('segmentSeparator')), parameters('segmentSeparator'), if(not(empty(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators)), variables('Defs')[parameters('resourceType')].allowedSegmentSeparators[0], ''))]",
+            "namingConventionSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(variables('namingConventionSubProcessed'), parameters('segmentSeparator'), ''), replace(variables('namingConventionSubProcessed'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "workloadNameSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(parameters('workloadName'), parameters('segmentSeparator'), ''), replace(parameters('workloadName'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "subWorkloadNameSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(parameters('subWorkloadName'), parameters('segmentSeparator'), ''), replace(parameters('subWorkloadName'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "randomizedWorkloadName": "[format('{0}{1}', variables('workloadNameSegmentSeparatorProcessed'), variables('randomChars'))]",
+            "resourceTypeReplacement": "[coalesce(parameters('resourceTypeReplacementOverride'), parameters('resourceType'))]",
+            "regularName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(parameters('environment'))), '{loc}', parameters('location')), '{seq}', variables('sequenceFormatted')), '{workloadName}', variables('randomizedWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "shortName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(take(parameters('environment'), 1))), '{loc}', variables('shortLocationValue')), '{seq}', string(parameters('sequence'))), '{workloadName}', variables('randomizedWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "mustTryVowelRemoval": "[greater(length(variables('shortName')), variables('maxLength'))]",
+            "minEffectiveVowelRemovalCount": "[sub(length(variables('shortName')), variables('maxLength'))]",
+            "workloadNameVowelsProcessed": "[if(and(variables('mustTryVowelRemoval'), parameters('useRemoveVowelStrategy')), replace(replace(replace(replace(replace(variables('workloadNameSegmentSeparatorProcessed'), 'a', ''), 'e', ''), 'i', ''), 'o', ''), 'u', ''), variables('workloadNameSegmentSeparatorProcessed'))]",
+            "subWorkloadNameVowelsProcessed": "[if(and(variables('mustTryVowelRemoval'), parameters('useRemoveVowelStrategy')), replace(replace(replace(replace(replace(variables('subWorkloadNameSegmentSeparatorProcessed'), 'a', ''), 'e', ''), 'i', ''), 'o', ''), 'u', ''), variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "mustShortenWorkloadName": "[less(sub(length(variables('randomizedWorkloadName')), length(format('{0}{1}', variables('workloadNameVowelsProcessed'), variables('randomChars')))), variables('minEffectiveVowelRemovalCount'))]",
+            "workloadNameCharsToKeep": "[if(variables('mustShortenWorkloadName'), add(sub(length(variables('workloadNameVowelsProcessed')), length(variables('shortName'))), variables('maxLength')), length(parameters('workloadName')))]",
+            "shortWorkloadName": "[format('{0}{1}', take(variables('workloadNameVowelsProcessed'), variables('workloadNameCharsToKeep')), variables('randomChars'))]",
+            "actualShortName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(take(parameters('environment'), 1))), '{loc}', variables('shortLocationValue')), '{seq}', string(parameters('sequence'))), '{workloadName}', variables('shortWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameVowelsProcessed'))]",
+            "actualName": "[if(or(parameters('requireShorten'), greater(length(variables('regularName')), variables('maxLength'))), variables('actualShortName'), variables('regularName'))]",
+            "actualNameCased": "[if(variables('lowerCase'), toLower(variables('actualName')), variables('actualName'))]"
+          },
+          "resources": {},
+          "outputs": {
+            "validName": {
+              "type": "string",
+              "value": "[take(variables('actualNameCased'), variables('maxLength'))]"
+            }
+          }
+        }
+      }
+    },
+    "automationAccountNameModule": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "automationAccountNameModule",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "namingConvention": {
+            "value": "[parameters('namingConvention')]"
+          },
+          "workloadName": {
+            "value": "[parameters('workloadName')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "resourceType": {
+            "value": "aa"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "sequence": {
+            "value": "[parameters('sequence')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.46.1.21595",
+              "templateHash": "14043603832211409352"
+            }
+          },
+          "parameters": {
+            "namingConvention": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "A valid Azure region name or region code."
+              }
+            },
+            "resourceType": {
+              "type": "string",
+              "allowedValues": [
+                "vnet",
+                "kv",
+                "st",
+                "cr",
+                "pg",
+                "ci",
+                "mysql",
+                "app",
+                "plan",
+                "appi",
+                "uami",
+                "dplscr",
+                "log",
+                "gal",
+                "aa",
+                "pe",
+                "nic"
+              ],
+              "metadata": {
+                "description": "A valid resource type abbreviation from the list of types supported by this module."
+              }
+            },
+            "environment": {
+              "type": "string"
+            },
+            "workloadName": {
+              "type": "string"
+            },
+            "subWorkloadName": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "sequence": {
+              "type": "int"
+            },
+            "requireShorten": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, the name will always use short versions of placeholders. If false, it will only be shortened when needed to fit in the maxLength."
+              }
+            },
+            "removeSegmentSeparator": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, hyphens will be removed from the name. If false, they will only be removed if required by the resource type."
+              }
+            },
+            "segmentSeparator": {
+              "type": "string",
+              "defaultValue": "-",
+              "allowedValues": [
+                "-",
+                "_",
+                ""
+              ],
+              "metadata": {
+                "description": "The segment separator used in the `namingConvention` parameter. Default and most supported is `-`."
+              }
+            },
+            "useRemoveVowelStrategy": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, when creating a short name, vowels will first be removed from the workload name."
+              }
+            },
+            "addRandomChars": {
+              "type": "int",
+              "defaultValue": 0,
+              "maxValue": 13,
+              "metadata": {
+                "description": "The number of random characters to add to the workload name. Random characters are created by the `uniquestring()` method combining subcription ID, workload name, location, environment, sequence, resource type, and the `additionalRandomInitializer` parameter."
+              }
+            },
+            "additionalRandomInitializer": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "When using addRandomChars > 0, generated resource names will be idempotent for the same subscription, workload, resource location, environment, sequence, and resource type. If an additional discrimnator is required, provide the value here."
+              }
+            },
+            "resourceTypeReplacementOverride": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "variables": {
+            "Defs": {
+              "vnet": {
+                "lowerCase": false,
+                "maxLength": 64,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "plan": {
+                "lowerCase": false,
+                "maxLength": 60,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "app": {
+                "lowerCase": false,
+                "maxLength": 60,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "kv": {
+                "lowerCase": false,
+                "maxLength": 24,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "st": {
+                "lowerCase": true,
+                "maxLength": 24,
+                "allowedSegmentSeparators": []
+              },
+              "cr": {
+                "lowerCase": false,
+                "maxLength": 50,
+                "allowedSegmentSeparators": []
+              },
+              "pg": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "ci": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "mysql": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "appi": {
+                "lowerCase": false,
+                "maxLength": 260,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "uami": {
+                "lowerCase": false,
+                "maxLength": 128,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "dplscr": {
+                "lowerCase": false,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "log": {
+                "lowerCase": false,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "gal": {
+                "lowerCase": false,
+                "maxLength": 80,
+                "allowedSegmentSeparators": [
+                  "_",
+                  "."
+                ]
+              },
+              "aa": {
+                "lowerCase": false,
+                "maxLength": 50,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "pe": {
+                "lowerCase": false,
+                "maxLength": 64,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_",
+                  "."
+                ]
+              },
+              "nic": {
+                "lowerCase": false,
+                "maxLength": 80,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_",
+                  "."
+                ]
+              }
+            },
+            "shortLocations": {
+              "australiacentral": "acl",
+              "Australia Central": "acl",
+              "australiacentral2": "acl2",
+              "Australia Central 2": "acl2",
+              "australiaeast": "ae",
+              "Australia East": "ae",
+              "australiasoutheast": "ase",
+              "Australia Southeast": "ase",
+              "brazilsouth": "brs",
+              "Brazil South": "brs",
+              "brazilsoutheast": "bse",
+              "Brazil Southeast": "bse",
+              "centraluseuap": "ccy",
+              "Central US EUAP": "ccy",
+              "canadacentral": "cnc",
+              "Canada Central": "cnc",
+              "canadaeast": "cne",
+              "Canada East": "cne",
+              "centralus": "cus",
+              "Central US": "cus",
+              "eastasia": "ea",
+              "East Asia": "ea",
+              "eastus2euap": "ecy",
+              "East US 2 EUAP": "ecy",
+              "eastus": "eus",
+              "East US": "eus",
+              "eastus2": "eus2",
+              "East US 2": "eus2",
+              "francecentral": "frc",
+              "France Central": "frc",
+              "francesouth": "frs",
+              "France South": "frs",
+              "germanynorth": "gn",
+              "Germany North": "gn",
+              "germanywestcentral": "gwc",
+              "Germany West Central": "gwc",
+              "centralindia": "inc",
+              "Central India": "inc",
+              "southindia": "ins",
+              "South India": "ins",
+              "westindia": "inw",
+              "West India": "inw",
+              "italynorth": "itn",
+              "Italy North": "itn",
+              "japaneast": "jpe",
+              "Japan East": "jpe",
+              "japanwest": "jpw",
+              "Japan West": "jpw",
+              "jioindiacentral": "jic",
+              "Jio India Central": "jic",
+              "jioindiawest": "jiw",
+              "Jio India West": "jiw",
+              "koreacentral": "krc",
+              "Korea Central": "krc",
+              "koreasouth": "krs",
+              "Korea South": "krs",
+              "northcentralus": "ncus",
+              "North Central US": "ncus",
+              "northeurope": "ne",
+              "North Europe": "ne",
+              "norwayeast": "nwe",
+              "Norway East": "nwe",
+              "norwaywest": "nww",
+              "Norway West": "nww",
+              "qatarcentral": "qac",
+              "Qatar Central": "qac",
+              "southafricanorth": "san",
+              "South Africa North": "san",
+              "southafricawest": "saw",
+              "South Africa West": "saw",
+              "southcentralus": "scus",
+              "South Central US": "scus",
+              "swedencentral": "sdc",
+              "Sweden Central": "sdc",
+              "swedensouth": "sds",
+              "Sweden South": "sds",
+              "southeastasia": "sea",
+              "Southeast Asia": "sea",
+              "switzerlandnorth": "szn",
+              "Switzerland North": "szn",
+              "switzerlandwest": "szw",
+              "Switzerland West": "szw",
+              "uaecentral": "uac",
+              "UAE Central": "uac",
+              "uaenorth": "uan",
+              "UAE North": "uan",
+              "uksouth": "uks",
+              "UK South": "uks",
+              "ukwest": "ukw",
+              "UK West": "ukw",
+              "westcentralus": "wcus",
+              "West Central US": "wcus",
+              "westeurope": "we",
+              "West Europe": "we",
+              "westus": "wus",
+              "West US": "wus",
+              "westus2": "wus2",
+              "West US 2": "wus2",
+              "westus3": "wus3",
+              "West US 3": "wus3",
+              "usdodcentral": "udc",
+              "USDoD Central": "udc",
+              "usdodeast": "ude",
+              "USDoD East": "ude",
+              "usgovarizona": "uga",
+              "USGov Arizona": "uga",
+              "usgoviowa": "ugi",
+              "USGov Iowa": "ugi",
+              "usgovtexas": "ugt",
+              "USGov Texas": "ugt",
+              "usgovvirginia": "ugv",
+              "USGov Virginia": "ugv",
+              "usnateast": "exe",
+              "USNat East": "exe",
+              "usnatwest": "exw",
+              "USNat West": "exw",
+              "usseceast": "rxe",
+              "USSec East": "rxe",
+              "ussecwest": "rxw",
+              "USSec West": "rxw",
+              "chinanorth": "bjb",
+              "China North": "bjb",
+              "chinanorth2": "bjb2",
+              "China North 2": "bjb2",
+              "chinanorth3": "bjb3",
+              "China North 3": "bjb3",
+              "chinaeast": "sha",
+              "China East": "sha",
+              "chinaeast2": "sha2",
+              "China East 2": "sha2",
+              "chinaeast3": "sha3",
+              "China East 3": "sha3",
+              "germanycentral": "gec",
+              "Germany Central": "gec",
+              "germanynortheast": "gne",
+              "Germany North East": "gne"
+            },
+            "maxLength": "[variables('Defs')[parameters('resourceType')].maxLength]",
+            "lowerCase": "[variables('Defs')[parameters('resourceType')].lowerCase]",
+            "doRemoveSegmentSeparator": "[or(empty(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators), parameters('removeSegmentSeparator'))]",
+            "shortLocationValue": "[variables('shortLocations')[parameters('location')]]",
+            "sequenceFormatted": "[format('{0:00}', parameters('sequence'))]",
+            "randomChars": "[if(greater(parameters('addRandomChars'), 0), take(uniqueString(subscription().subscriptionId, parameters('workloadName'), parameters('location'), parameters('environment'), string(parameters('sequence')), variables('resourceTypeReplacement'), parameters('additionalRandomInitializer')), parameters('addRandomChars')), '')]",
+            "namingConventionSubProcessed": "[if(empty(parameters('subWorkloadName')), replace(parameters('namingConvention'), '-{subWorkloadName}', ''), parameters('namingConvention'))]",
+            "actualSegmentSeparator": "[if(contains(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators, parameters('segmentSeparator')), parameters('segmentSeparator'), if(not(empty(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators)), variables('Defs')[parameters('resourceType')].allowedSegmentSeparators[0], ''))]",
+            "namingConventionSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(variables('namingConventionSubProcessed'), parameters('segmentSeparator'), ''), replace(variables('namingConventionSubProcessed'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "workloadNameSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(parameters('workloadName'), parameters('segmentSeparator'), ''), replace(parameters('workloadName'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "subWorkloadNameSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(parameters('subWorkloadName'), parameters('segmentSeparator'), ''), replace(parameters('subWorkloadName'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "randomizedWorkloadName": "[format('{0}{1}', variables('workloadNameSegmentSeparatorProcessed'), variables('randomChars'))]",
+            "resourceTypeReplacement": "[coalesce(parameters('resourceTypeReplacementOverride'), parameters('resourceType'))]",
+            "regularName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(parameters('environment'))), '{loc}', parameters('location')), '{seq}', variables('sequenceFormatted')), '{workloadName}', variables('randomizedWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "shortName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(take(parameters('environment'), 1))), '{loc}', variables('shortLocationValue')), '{seq}', string(parameters('sequence'))), '{workloadName}', variables('randomizedWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "mustTryVowelRemoval": "[greater(length(variables('shortName')), variables('maxLength'))]",
+            "minEffectiveVowelRemovalCount": "[sub(length(variables('shortName')), variables('maxLength'))]",
+            "workloadNameVowelsProcessed": "[if(and(variables('mustTryVowelRemoval'), parameters('useRemoveVowelStrategy')), replace(replace(replace(replace(replace(variables('workloadNameSegmentSeparatorProcessed'), 'a', ''), 'e', ''), 'i', ''), 'o', ''), 'u', ''), variables('workloadNameSegmentSeparatorProcessed'))]",
+            "subWorkloadNameVowelsProcessed": "[if(and(variables('mustTryVowelRemoval'), parameters('useRemoveVowelStrategy')), replace(replace(replace(replace(replace(variables('subWorkloadNameSegmentSeparatorProcessed'), 'a', ''), 'e', ''), 'i', ''), 'o', ''), 'u', ''), variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "mustShortenWorkloadName": "[less(sub(length(variables('randomizedWorkloadName')), length(format('{0}{1}', variables('workloadNameVowelsProcessed'), variables('randomChars')))), variables('minEffectiveVowelRemovalCount'))]",
+            "workloadNameCharsToKeep": "[if(variables('mustShortenWorkloadName'), add(sub(length(variables('workloadNameVowelsProcessed')), length(variables('shortName'))), variables('maxLength')), length(parameters('workloadName')))]",
+            "shortWorkloadName": "[format('{0}{1}', take(variables('workloadNameVowelsProcessed'), variables('workloadNameCharsToKeep')), variables('randomChars'))]",
+            "actualShortName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(take(parameters('environment'), 1))), '{loc}', variables('shortLocationValue')), '{seq}', string(parameters('sequence'))), '{workloadName}', variables('shortWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameVowelsProcessed'))]",
+            "actualName": "[if(or(parameters('requireShorten'), greater(length(variables('regularName')), variables('maxLength'))), variables('actualShortName'), variables('regularName'))]",
+            "actualNameCased": "[if(variables('lowerCase'), toLower(variables('actualName')), variables('actualName'))]"
+          },
+          "resources": {},
+          "outputs": {
+            "validName": {
+              "type": "string",
+              "value": "[take(variables('actualNameCased'), variables('maxLength'))]"
+            }
+          }
+        }
+      }
+    },
+    "userAssignedIdentityNameModule": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "userAssignedIdentityNameModule",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "namingConvention": {
+            "value": "[parameters('namingConvention')]"
+          },
+          "workloadName": {
+            "value": "[parameters('workloadName')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "resourceType": {
+            "value": "uami"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "sequence": {
+            "value": "[parameters('sequence')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.46.1.21595",
+              "templateHash": "14043603832211409352"
+            }
+          },
+          "parameters": {
+            "namingConvention": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "A valid Azure region name or region code."
+              }
+            },
+            "resourceType": {
+              "type": "string",
+              "allowedValues": [
+                "vnet",
+                "kv",
+                "st",
+                "cr",
+                "pg",
+                "ci",
+                "mysql",
+                "app",
+                "plan",
+                "appi",
+                "uami",
+                "dplscr",
+                "log",
+                "gal",
+                "aa",
+                "pe",
+                "nic"
+              ],
+              "metadata": {
+                "description": "A valid resource type abbreviation from the list of types supported by this module."
+              }
+            },
+            "environment": {
+              "type": "string"
+            },
+            "workloadName": {
+              "type": "string"
+            },
+            "subWorkloadName": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "sequence": {
+              "type": "int"
+            },
+            "requireShorten": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, the name will always use short versions of placeholders. If false, it will only be shortened when needed to fit in the maxLength."
+              }
+            },
+            "removeSegmentSeparator": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, hyphens will be removed from the name. If false, they will only be removed if required by the resource type."
+              }
+            },
+            "segmentSeparator": {
+              "type": "string",
+              "defaultValue": "-",
+              "allowedValues": [
+                "-",
+                "_",
+                ""
+              ],
+              "metadata": {
+                "description": "The segment separator used in the `namingConvention` parameter. Default and most supported is `-`."
+              }
+            },
+            "useRemoveVowelStrategy": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, when creating a short name, vowels will first be removed from the workload name."
+              }
+            },
+            "addRandomChars": {
+              "type": "int",
+              "defaultValue": 0,
+              "maxValue": 13,
+              "metadata": {
+                "description": "The number of random characters to add to the workload name. Random characters are created by the `uniquestring()` method combining subcription ID, workload name, location, environment, sequence, resource type, and the `additionalRandomInitializer` parameter."
+              }
+            },
+            "additionalRandomInitializer": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "When using addRandomChars > 0, generated resource names will be idempotent for the same subscription, workload, resource location, environment, sequence, and resource type. If an additional discrimnator is required, provide the value here."
+              }
+            },
+            "resourceTypeReplacementOverride": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "variables": {
+            "Defs": {
+              "vnet": {
+                "lowerCase": false,
+                "maxLength": 64,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "plan": {
+                "lowerCase": false,
+                "maxLength": 60,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "app": {
+                "lowerCase": false,
+                "maxLength": 60,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "kv": {
+                "lowerCase": false,
+                "maxLength": 24,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "st": {
+                "lowerCase": true,
+                "maxLength": 24,
+                "allowedSegmentSeparators": []
+              },
+              "cr": {
+                "lowerCase": false,
+                "maxLength": 50,
+                "allowedSegmentSeparators": []
+              },
+              "pg": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "ci": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "mysql": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "appi": {
+                "lowerCase": false,
+                "maxLength": 260,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "uami": {
+                "lowerCase": false,
+                "maxLength": 128,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "dplscr": {
+                "lowerCase": false,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "log": {
+                "lowerCase": false,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "gal": {
+                "lowerCase": false,
+                "maxLength": 80,
+                "allowedSegmentSeparators": [
+                  "_",
+                  "."
+                ]
+              },
+              "aa": {
+                "lowerCase": false,
+                "maxLength": 50,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "pe": {
+                "lowerCase": false,
+                "maxLength": 64,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_",
+                  "."
+                ]
+              },
+              "nic": {
+                "lowerCase": false,
+                "maxLength": 80,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_",
+                  "."
+                ]
+              }
+            },
+            "shortLocations": {
+              "australiacentral": "acl",
+              "Australia Central": "acl",
+              "australiacentral2": "acl2",
+              "Australia Central 2": "acl2",
+              "australiaeast": "ae",
+              "Australia East": "ae",
+              "australiasoutheast": "ase",
+              "Australia Southeast": "ase",
+              "brazilsouth": "brs",
+              "Brazil South": "brs",
+              "brazilsoutheast": "bse",
+              "Brazil Southeast": "bse",
+              "centraluseuap": "ccy",
+              "Central US EUAP": "ccy",
+              "canadacentral": "cnc",
+              "Canada Central": "cnc",
+              "canadaeast": "cne",
+              "Canada East": "cne",
+              "centralus": "cus",
+              "Central US": "cus",
+              "eastasia": "ea",
+              "East Asia": "ea",
+              "eastus2euap": "ecy",
+              "East US 2 EUAP": "ecy",
+              "eastus": "eus",
+              "East US": "eus",
+              "eastus2": "eus2",
+              "East US 2": "eus2",
+              "francecentral": "frc",
+              "France Central": "frc",
+              "francesouth": "frs",
+              "France South": "frs",
+              "germanynorth": "gn",
+              "Germany North": "gn",
+              "germanywestcentral": "gwc",
+              "Germany West Central": "gwc",
+              "centralindia": "inc",
+              "Central India": "inc",
+              "southindia": "ins",
+              "South India": "ins",
+              "westindia": "inw",
+              "West India": "inw",
+              "italynorth": "itn",
+              "Italy North": "itn",
+              "japaneast": "jpe",
+              "Japan East": "jpe",
+              "japanwest": "jpw",
+              "Japan West": "jpw",
+              "jioindiacentral": "jic",
+              "Jio India Central": "jic",
+              "jioindiawest": "jiw",
+              "Jio India West": "jiw",
+              "koreacentral": "krc",
+              "Korea Central": "krc",
+              "koreasouth": "krs",
+              "Korea South": "krs",
+              "northcentralus": "ncus",
+              "North Central US": "ncus",
+              "northeurope": "ne",
+              "North Europe": "ne",
+              "norwayeast": "nwe",
+              "Norway East": "nwe",
+              "norwaywest": "nww",
+              "Norway West": "nww",
+              "qatarcentral": "qac",
+              "Qatar Central": "qac",
+              "southafricanorth": "san",
+              "South Africa North": "san",
+              "southafricawest": "saw",
+              "South Africa West": "saw",
+              "southcentralus": "scus",
+              "South Central US": "scus",
+              "swedencentral": "sdc",
+              "Sweden Central": "sdc",
+              "swedensouth": "sds",
+              "Sweden South": "sds",
+              "southeastasia": "sea",
+              "Southeast Asia": "sea",
+              "switzerlandnorth": "szn",
+              "Switzerland North": "szn",
+              "switzerlandwest": "szw",
+              "Switzerland West": "szw",
+              "uaecentral": "uac",
+              "UAE Central": "uac",
+              "uaenorth": "uan",
+              "UAE North": "uan",
+              "uksouth": "uks",
+              "UK South": "uks",
+              "ukwest": "ukw",
+              "UK West": "ukw",
+              "westcentralus": "wcus",
+              "West Central US": "wcus",
+              "westeurope": "we",
+              "West Europe": "we",
+              "westus": "wus",
+              "West US": "wus",
+              "westus2": "wus2",
+              "West US 2": "wus2",
+              "westus3": "wus3",
+              "West US 3": "wus3",
+              "usdodcentral": "udc",
+              "USDoD Central": "udc",
+              "usdodeast": "ude",
+              "USDoD East": "ude",
+              "usgovarizona": "uga",
+              "USGov Arizona": "uga",
+              "usgoviowa": "ugi",
+              "USGov Iowa": "ugi",
+              "usgovtexas": "ugt",
+              "USGov Texas": "ugt",
+              "usgovvirginia": "ugv",
+              "USGov Virginia": "ugv",
+              "usnateast": "exe",
+              "USNat East": "exe",
+              "usnatwest": "exw",
+              "USNat West": "exw",
+              "usseceast": "rxe",
+              "USSec East": "rxe",
+              "ussecwest": "rxw",
+              "USSec West": "rxw",
+              "chinanorth": "bjb",
+              "China North": "bjb",
+              "chinanorth2": "bjb2",
+              "China North 2": "bjb2",
+              "chinanorth3": "bjb3",
+              "China North 3": "bjb3",
+              "chinaeast": "sha",
+              "China East": "sha",
+              "chinaeast2": "sha2",
+              "China East 2": "sha2",
+              "chinaeast3": "sha3",
+              "China East 3": "sha3",
+              "germanycentral": "gec",
+              "Germany Central": "gec",
+              "germanynortheast": "gne",
+              "Germany North East": "gne"
+            },
+            "maxLength": "[variables('Defs')[parameters('resourceType')].maxLength]",
+            "lowerCase": "[variables('Defs')[parameters('resourceType')].lowerCase]",
+            "doRemoveSegmentSeparator": "[or(empty(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators), parameters('removeSegmentSeparator'))]",
+            "shortLocationValue": "[variables('shortLocations')[parameters('location')]]",
+            "sequenceFormatted": "[format('{0:00}', parameters('sequence'))]",
+            "randomChars": "[if(greater(parameters('addRandomChars'), 0), take(uniqueString(subscription().subscriptionId, parameters('workloadName'), parameters('location'), parameters('environment'), string(parameters('sequence')), variables('resourceTypeReplacement'), parameters('additionalRandomInitializer')), parameters('addRandomChars')), '')]",
+            "namingConventionSubProcessed": "[if(empty(parameters('subWorkloadName')), replace(parameters('namingConvention'), '-{subWorkloadName}', ''), parameters('namingConvention'))]",
+            "actualSegmentSeparator": "[if(contains(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators, parameters('segmentSeparator')), parameters('segmentSeparator'), if(not(empty(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators)), variables('Defs')[parameters('resourceType')].allowedSegmentSeparators[0], ''))]",
+            "namingConventionSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(variables('namingConventionSubProcessed'), parameters('segmentSeparator'), ''), replace(variables('namingConventionSubProcessed'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "workloadNameSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(parameters('workloadName'), parameters('segmentSeparator'), ''), replace(parameters('workloadName'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "subWorkloadNameSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(parameters('subWorkloadName'), parameters('segmentSeparator'), ''), replace(parameters('subWorkloadName'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "randomizedWorkloadName": "[format('{0}{1}', variables('workloadNameSegmentSeparatorProcessed'), variables('randomChars'))]",
+            "resourceTypeReplacement": "[coalesce(parameters('resourceTypeReplacementOverride'), parameters('resourceType'))]",
+            "regularName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(parameters('environment'))), '{loc}', parameters('location')), '{seq}', variables('sequenceFormatted')), '{workloadName}', variables('randomizedWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "shortName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(take(parameters('environment'), 1))), '{loc}', variables('shortLocationValue')), '{seq}', string(parameters('sequence'))), '{workloadName}', variables('randomizedWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "mustTryVowelRemoval": "[greater(length(variables('shortName')), variables('maxLength'))]",
+            "minEffectiveVowelRemovalCount": "[sub(length(variables('shortName')), variables('maxLength'))]",
+            "workloadNameVowelsProcessed": "[if(and(variables('mustTryVowelRemoval'), parameters('useRemoveVowelStrategy')), replace(replace(replace(replace(replace(variables('workloadNameSegmentSeparatorProcessed'), 'a', ''), 'e', ''), 'i', ''), 'o', ''), 'u', ''), variables('workloadNameSegmentSeparatorProcessed'))]",
+            "subWorkloadNameVowelsProcessed": "[if(and(variables('mustTryVowelRemoval'), parameters('useRemoveVowelStrategy')), replace(replace(replace(replace(replace(variables('subWorkloadNameSegmentSeparatorProcessed'), 'a', ''), 'e', ''), 'i', ''), 'o', ''), 'u', ''), variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "mustShortenWorkloadName": "[less(sub(length(variables('randomizedWorkloadName')), length(format('{0}{1}', variables('workloadNameVowelsProcessed'), variables('randomChars')))), variables('minEffectiveVowelRemovalCount'))]",
+            "workloadNameCharsToKeep": "[if(variables('mustShortenWorkloadName'), add(sub(length(variables('workloadNameVowelsProcessed')), length(variables('shortName'))), variables('maxLength')), length(parameters('workloadName')))]",
+            "shortWorkloadName": "[format('{0}{1}', take(variables('workloadNameVowelsProcessed'), variables('workloadNameCharsToKeep')), variables('randomChars'))]",
+            "actualShortName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(take(parameters('environment'), 1))), '{loc}', variables('shortLocationValue')), '{seq}', string(parameters('sequence'))), '{workloadName}', variables('shortWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameVowelsProcessed'))]",
+            "actualName": "[if(or(parameters('requireShorten'), greater(length(variables('regularName')), variables('maxLength'))), variables('actualShortName'), variables('regularName'))]",
+            "actualNameCased": "[if(variables('lowerCase'), toLower(variables('actualName')), variables('actualName'))]"
+          },
+          "resources": {},
+          "outputs": {
+            "validName": {
+              "type": "string",
+              "value": "[take(variables('actualNameCased'), variables('maxLength'))]"
+            }
+          }
+        }
+      }
+    },
+    "containerRegistryNameModule": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "containerRegistryNameModule",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "namingConvention": {
+            "value": "[parameters('namingConvention')]"
+          },
+          "addRandomChars": {
+            "value": 4
+          },
+          "workloadName": {
+            "value": "[parameters('workloadName')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "resourceType": {
+            "value": "cr"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "sequence": {
+            "value": "[parameters('sequence')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.46.1.21595",
+              "templateHash": "14043603832211409352"
+            }
+          },
+          "parameters": {
+            "namingConvention": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "A valid Azure region name or region code."
+              }
+            },
+            "resourceType": {
+              "type": "string",
+              "allowedValues": [
+                "vnet",
+                "kv",
+                "st",
+                "cr",
+                "pg",
+                "ci",
+                "mysql",
+                "app",
+                "plan",
+                "appi",
+                "uami",
+                "dplscr",
+                "log",
+                "gal",
+                "aa",
+                "pe",
+                "nic"
+              ],
+              "metadata": {
+                "description": "A valid resource type abbreviation from the list of types supported by this module."
+              }
+            },
+            "environment": {
+              "type": "string"
+            },
+            "workloadName": {
+              "type": "string"
+            },
+            "subWorkloadName": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "sequence": {
+              "type": "int"
+            },
+            "requireShorten": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, the name will always use short versions of placeholders. If false, it will only be shortened when needed to fit in the maxLength."
+              }
+            },
+            "removeSegmentSeparator": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, hyphens will be removed from the name. If false, they will only be removed if required by the resource type."
+              }
+            },
+            "segmentSeparator": {
+              "type": "string",
+              "defaultValue": "-",
+              "allowedValues": [
+                "-",
+                "_",
+                ""
+              ],
+              "metadata": {
+                "description": "The segment separator used in the `namingConvention` parameter. Default and most supported is `-`."
+              }
+            },
+            "useRemoveVowelStrategy": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, when creating a short name, vowels will first be removed from the workload name."
+              }
+            },
+            "addRandomChars": {
+              "type": "int",
+              "defaultValue": 0,
+              "maxValue": 13,
+              "metadata": {
+                "description": "The number of random characters to add to the workload name. Random characters are created by the `uniquestring()` method combining subcription ID, workload name, location, environment, sequence, resource type, and the `additionalRandomInitializer` parameter."
+              }
+            },
+            "additionalRandomInitializer": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "When using addRandomChars > 0, generated resource names will be idempotent for the same subscription, workload, resource location, environment, sequence, and resource type. If an additional discrimnator is required, provide the value here."
+              }
+            },
+            "resourceTypeReplacementOverride": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "variables": {
+            "Defs": {
+              "vnet": {
+                "lowerCase": false,
+                "maxLength": 64,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "plan": {
+                "lowerCase": false,
+                "maxLength": 60,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "app": {
+                "lowerCase": false,
+                "maxLength": 60,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "kv": {
+                "lowerCase": false,
+                "maxLength": 24,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "st": {
+                "lowerCase": true,
+                "maxLength": 24,
+                "allowedSegmentSeparators": []
+              },
+              "cr": {
+                "lowerCase": false,
+                "maxLength": 50,
+                "allowedSegmentSeparators": []
+              },
+              "pg": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "ci": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "mysql": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "appi": {
+                "lowerCase": false,
+                "maxLength": 260,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "uami": {
+                "lowerCase": false,
+                "maxLength": 128,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "dplscr": {
+                "lowerCase": false,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "log": {
+                "lowerCase": false,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "gal": {
+                "lowerCase": false,
+                "maxLength": 80,
+                "allowedSegmentSeparators": [
+                  "_",
+                  "."
+                ]
+              },
+              "aa": {
+                "lowerCase": false,
+                "maxLength": 50,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "pe": {
+                "lowerCase": false,
+                "maxLength": 64,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_",
+                  "."
+                ]
+              },
+              "nic": {
+                "lowerCase": false,
+                "maxLength": 80,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_",
+                  "."
+                ]
+              }
+            },
+            "shortLocations": {
+              "australiacentral": "acl",
+              "Australia Central": "acl",
+              "australiacentral2": "acl2",
+              "Australia Central 2": "acl2",
+              "australiaeast": "ae",
+              "Australia East": "ae",
+              "australiasoutheast": "ase",
+              "Australia Southeast": "ase",
+              "brazilsouth": "brs",
+              "Brazil South": "brs",
+              "brazilsoutheast": "bse",
+              "Brazil Southeast": "bse",
+              "centraluseuap": "ccy",
+              "Central US EUAP": "ccy",
+              "canadacentral": "cnc",
+              "Canada Central": "cnc",
+              "canadaeast": "cne",
+              "Canada East": "cne",
+              "centralus": "cus",
+              "Central US": "cus",
+              "eastasia": "ea",
+              "East Asia": "ea",
+              "eastus2euap": "ecy",
+              "East US 2 EUAP": "ecy",
+              "eastus": "eus",
+              "East US": "eus",
+              "eastus2": "eus2",
+              "East US 2": "eus2",
+              "francecentral": "frc",
+              "France Central": "frc",
+              "francesouth": "frs",
+              "France South": "frs",
+              "germanynorth": "gn",
+              "Germany North": "gn",
+              "germanywestcentral": "gwc",
+              "Germany West Central": "gwc",
+              "centralindia": "inc",
+              "Central India": "inc",
+              "southindia": "ins",
+              "South India": "ins",
+              "westindia": "inw",
+              "West India": "inw",
+              "italynorth": "itn",
+              "Italy North": "itn",
+              "japaneast": "jpe",
+              "Japan East": "jpe",
+              "japanwest": "jpw",
+              "Japan West": "jpw",
+              "jioindiacentral": "jic",
+              "Jio India Central": "jic",
+              "jioindiawest": "jiw",
+              "Jio India West": "jiw",
+              "koreacentral": "krc",
+              "Korea Central": "krc",
+              "koreasouth": "krs",
+              "Korea South": "krs",
+              "northcentralus": "ncus",
+              "North Central US": "ncus",
+              "northeurope": "ne",
+              "North Europe": "ne",
+              "norwayeast": "nwe",
+              "Norway East": "nwe",
+              "norwaywest": "nww",
+              "Norway West": "nww",
+              "qatarcentral": "qac",
+              "Qatar Central": "qac",
+              "southafricanorth": "san",
+              "South Africa North": "san",
+              "southafricawest": "saw",
+              "South Africa West": "saw",
+              "southcentralus": "scus",
+              "South Central US": "scus",
+              "swedencentral": "sdc",
+              "Sweden Central": "sdc",
+              "swedensouth": "sds",
+              "Sweden South": "sds",
+              "southeastasia": "sea",
+              "Southeast Asia": "sea",
+              "switzerlandnorth": "szn",
+              "Switzerland North": "szn",
+              "switzerlandwest": "szw",
+              "Switzerland West": "szw",
+              "uaecentral": "uac",
+              "UAE Central": "uac",
+              "uaenorth": "uan",
+              "UAE North": "uan",
+              "uksouth": "uks",
+              "UK South": "uks",
+              "ukwest": "ukw",
+              "UK West": "ukw",
+              "westcentralus": "wcus",
+              "West Central US": "wcus",
+              "westeurope": "we",
+              "West Europe": "we",
+              "westus": "wus",
+              "West US": "wus",
+              "westus2": "wus2",
+              "West US 2": "wus2",
+              "westus3": "wus3",
+              "West US 3": "wus3",
+              "usdodcentral": "udc",
+              "USDoD Central": "udc",
+              "usdodeast": "ude",
+              "USDoD East": "ude",
+              "usgovarizona": "uga",
+              "USGov Arizona": "uga",
+              "usgoviowa": "ugi",
+              "USGov Iowa": "ugi",
+              "usgovtexas": "ugt",
+              "USGov Texas": "ugt",
+              "usgovvirginia": "ugv",
+              "USGov Virginia": "ugv",
+              "usnateast": "exe",
+              "USNat East": "exe",
+              "usnatwest": "exw",
+              "USNat West": "exw",
+              "usseceast": "rxe",
+              "USSec East": "rxe",
+              "ussecwest": "rxw",
+              "USSec West": "rxw",
+              "chinanorth": "bjb",
+              "China North": "bjb",
+              "chinanorth2": "bjb2",
+              "China North 2": "bjb2",
+              "chinanorth3": "bjb3",
+              "China North 3": "bjb3",
+              "chinaeast": "sha",
+              "China East": "sha",
+              "chinaeast2": "sha2",
+              "China East 2": "sha2",
+              "chinaeast3": "sha3",
+              "China East 3": "sha3",
+              "germanycentral": "gec",
+              "Germany Central": "gec",
+              "germanynortheast": "gne",
+              "Germany North East": "gne"
+            },
+            "maxLength": "[variables('Defs')[parameters('resourceType')].maxLength]",
+            "lowerCase": "[variables('Defs')[parameters('resourceType')].lowerCase]",
+            "doRemoveSegmentSeparator": "[or(empty(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators), parameters('removeSegmentSeparator'))]",
+            "shortLocationValue": "[variables('shortLocations')[parameters('location')]]",
+            "sequenceFormatted": "[format('{0:00}', parameters('sequence'))]",
+            "randomChars": "[if(greater(parameters('addRandomChars'), 0), take(uniqueString(subscription().subscriptionId, parameters('workloadName'), parameters('location'), parameters('environment'), string(parameters('sequence')), variables('resourceTypeReplacement'), parameters('additionalRandomInitializer')), parameters('addRandomChars')), '')]",
+            "namingConventionSubProcessed": "[if(empty(parameters('subWorkloadName')), replace(parameters('namingConvention'), '-{subWorkloadName}', ''), parameters('namingConvention'))]",
+            "actualSegmentSeparator": "[if(contains(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators, parameters('segmentSeparator')), parameters('segmentSeparator'), if(not(empty(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators)), variables('Defs')[parameters('resourceType')].allowedSegmentSeparators[0], ''))]",
+            "namingConventionSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(variables('namingConventionSubProcessed'), parameters('segmentSeparator'), ''), replace(variables('namingConventionSubProcessed'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "workloadNameSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(parameters('workloadName'), parameters('segmentSeparator'), ''), replace(parameters('workloadName'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "subWorkloadNameSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(parameters('subWorkloadName'), parameters('segmentSeparator'), ''), replace(parameters('subWorkloadName'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "randomizedWorkloadName": "[format('{0}{1}', variables('workloadNameSegmentSeparatorProcessed'), variables('randomChars'))]",
+            "resourceTypeReplacement": "[coalesce(parameters('resourceTypeReplacementOverride'), parameters('resourceType'))]",
+            "regularName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(parameters('environment'))), '{loc}', parameters('location')), '{seq}', variables('sequenceFormatted')), '{workloadName}', variables('randomizedWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "shortName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(take(parameters('environment'), 1))), '{loc}', variables('shortLocationValue')), '{seq}', string(parameters('sequence'))), '{workloadName}', variables('randomizedWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "mustTryVowelRemoval": "[greater(length(variables('shortName')), variables('maxLength'))]",
+            "minEffectiveVowelRemovalCount": "[sub(length(variables('shortName')), variables('maxLength'))]",
+            "workloadNameVowelsProcessed": "[if(and(variables('mustTryVowelRemoval'), parameters('useRemoveVowelStrategy')), replace(replace(replace(replace(replace(variables('workloadNameSegmentSeparatorProcessed'), 'a', ''), 'e', ''), 'i', ''), 'o', ''), 'u', ''), variables('workloadNameSegmentSeparatorProcessed'))]",
+            "subWorkloadNameVowelsProcessed": "[if(and(variables('mustTryVowelRemoval'), parameters('useRemoveVowelStrategy')), replace(replace(replace(replace(replace(variables('subWorkloadNameSegmentSeparatorProcessed'), 'a', ''), 'e', ''), 'i', ''), 'o', ''), 'u', ''), variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "mustShortenWorkloadName": "[less(sub(length(variables('randomizedWorkloadName')), length(format('{0}{1}', variables('workloadNameVowelsProcessed'), variables('randomChars')))), variables('minEffectiveVowelRemovalCount'))]",
+            "workloadNameCharsToKeep": "[if(variables('mustShortenWorkloadName'), add(sub(length(variables('workloadNameVowelsProcessed')), length(variables('shortName'))), variables('maxLength')), length(parameters('workloadName')))]",
+            "shortWorkloadName": "[format('{0}{1}', take(variables('workloadNameVowelsProcessed'), variables('workloadNameCharsToKeep')), variables('randomChars'))]",
+            "actualShortName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(take(parameters('environment'), 1))), '{loc}', variables('shortLocationValue')), '{seq}', string(parameters('sequence'))), '{workloadName}', variables('shortWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameVowelsProcessed'))]",
+            "actualName": "[if(or(parameters('requireShorten'), greater(length(variables('regularName')), variables('maxLength'))), variables('actualShortName'), variables('regularName'))]",
+            "actualNameCased": "[if(variables('lowerCase'), toLower(variables('actualName')), variables('actualName'))]"
+          },
+          "resources": {},
+          "outputs": {
+            "validName": {
+              "type": "string",
+              "value": "[take(variables('actualNameCased'), variables('maxLength'))]"
+            }
+          }
+        }
+      }
+    },
+    "blobPrivateEndpointNameModule": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "blobPrivateEndpointNameModule",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "namingConvention": {
+            "value": "[parameters('namingConvention')]"
+          },
+          "workloadName": {
+            "value": "[parameters('workloadName')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "resourceType": {
+            "value": "pe"
+          },
+          "resourceTypeReplacementOverride": {
+            "value": "pe-st-blob"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "sequence": {
+            "value": "[parameters('sequence')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.46.1.21595",
+              "templateHash": "14043603832211409352"
+            }
+          },
+          "parameters": {
+            "namingConvention": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "A valid Azure region name or region code."
+              }
+            },
+            "resourceType": {
+              "type": "string",
+              "allowedValues": [
+                "vnet",
+                "kv",
+                "st",
+                "cr",
+                "pg",
+                "ci",
+                "mysql",
+                "app",
+                "plan",
+                "appi",
+                "uami",
+                "dplscr",
+                "log",
+                "gal",
+                "aa",
+                "pe",
+                "nic"
+              ],
+              "metadata": {
+                "description": "A valid resource type abbreviation from the list of types supported by this module."
+              }
+            },
+            "environment": {
+              "type": "string"
+            },
+            "workloadName": {
+              "type": "string"
+            },
+            "subWorkloadName": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "sequence": {
+              "type": "int"
+            },
+            "requireShorten": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, the name will always use short versions of placeholders. If false, it will only be shortened when needed to fit in the maxLength."
+              }
+            },
+            "removeSegmentSeparator": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, hyphens will be removed from the name. If false, they will only be removed if required by the resource type."
+              }
+            },
+            "segmentSeparator": {
+              "type": "string",
+              "defaultValue": "-",
+              "allowedValues": [
+                "-",
+                "_",
+                ""
+              ],
+              "metadata": {
+                "description": "The segment separator used in the `namingConvention` parameter. Default and most supported is `-`."
+              }
+            },
+            "useRemoveVowelStrategy": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, when creating a short name, vowels will first be removed from the workload name."
+              }
+            },
+            "addRandomChars": {
+              "type": "int",
+              "defaultValue": 0,
+              "maxValue": 13,
+              "metadata": {
+                "description": "The number of random characters to add to the workload name. Random characters are created by the `uniquestring()` method combining subcription ID, workload name, location, environment, sequence, resource type, and the `additionalRandomInitializer` parameter."
+              }
+            },
+            "additionalRandomInitializer": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "When using addRandomChars > 0, generated resource names will be idempotent for the same subscription, workload, resource location, environment, sequence, and resource type. If an additional discrimnator is required, provide the value here."
+              }
+            },
+            "resourceTypeReplacementOverride": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "variables": {
+            "Defs": {
+              "vnet": {
+                "lowerCase": false,
+                "maxLength": 64,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "plan": {
+                "lowerCase": false,
+                "maxLength": 60,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "app": {
+                "lowerCase": false,
+                "maxLength": 60,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "kv": {
+                "lowerCase": false,
+                "maxLength": 24,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "st": {
+                "lowerCase": true,
+                "maxLength": 24,
+                "allowedSegmentSeparators": []
+              },
+              "cr": {
+                "lowerCase": false,
+                "maxLength": 50,
+                "allowedSegmentSeparators": []
+              },
+              "pg": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "ci": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "mysql": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "appi": {
+                "lowerCase": false,
+                "maxLength": 260,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "uami": {
+                "lowerCase": false,
+                "maxLength": 128,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "dplscr": {
+                "lowerCase": false,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "log": {
+                "lowerCase": false,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "gal": {
+                "lowerCase": false,
+                "maxLength": 80,
+                "allowedSegmentSeparators": [
+                  "_",
+                  "."
+                ]
+              },
+              "aa": {
+                "lowerCase": false,
+                "maxLength": 50,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "pe": {
+                "lowerCase": false,
+                "maxLength": 64,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_",
+                  "."
+                ]
+              },
+              "nic": {
+                "lowerCase": false,
+                "maxLength": 80,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_",
+                  "."
+                ]
+              }
+            },
+            "shortLocations": {
+              "australiacentral": "acl",
+              "Australia Central": "acl",
+              "australiacentral2": "acl2",
+              "Australia Central 2": "acl2",
+              "australiaeast": "ae",
+              "Australia East": "ae",
+              "australiasoutheast": "ase",
+              "Australia Southeast": "ase",
+              "brazilsouth": "brs",
+              "Brazil South": "brs",
+              "brazilsoutheast": "bse",
+              "Brazil Southeast": "bse",
+              "centraluseuap": "ccy",
+              "Central US EUAP": "ccy",
+              "canadacentral": "cnc",
+              "Canada Central": "cnc",
+              "canadaeast": "cne",
+              "Canada East": "cne",
+              "centralus": "cus",
+              "Central US": "cus",
+              "eastasia": "ea",
+              "East Asia": "ea",
+              "eastus2euap": "ecy",
+              "East US 2 EUAP": "ecy",
+              "eastus": "eus",
+              "East US": "eus",
+              "eastus2": "eus2",
+              "East US 2": "eus2",
+              "francecentral": "frc",
+              "France Central": "frc",
+              "francesouth": "frs",
+              "France South": "frs",
+              "germanynorth": "gn",
+              "Germany North": "gn",
+              "germanywestcentral": "gwc",
+              "Germany West Central": "gwc",
+              "centralindia": "inc",
+              "Central India": "inc",
+              "southindia": "ins",
+              "South India": "ins",
+              "westindia": "inw",
+              "West India": "inw",
+              "italynorth": "itn",
+              "Italy North": "itn",
+              "japaneast": "jpe",
+              "Japan East": "jpe",
+              "japanwest": "jpw",
+              "Japan West": "jpw",
+              "jioindiacentral": "jic",
+              "Jio India Central": "jic",
+              "jioindiawest": "jiw",
+              "Jio India West": "jiw",
+              "koreacentral": "krc",
+              "Korea Central": "krc",
+              "koreasouth": "krs",
+              "Korea South": "krs",
+              "northcentralus": "ncus",
+              "North Central US": "ncus",
+              "northeurope": "ne",
+              "North Europe": "ne",
+              "norwayeast": "nwe",
+              "Norway East": "nwe",
+              "norwaywest": "nww",
+              "Norway West": "nww",
+              "qatarcentral": "qac",
+              "Qatar Central": "qac",
+              "southafricanorth": "san",
+              "South Africa North": "san",
+              "southafricawest": "saw",
+              "South Africa West": "saw",
+              "southcentralus": "scus",
+              "South Central US": "scus",
+              "swedencentral": "sdc",
+              "Sweden Central": "sdc",
+              "swedensouth": "sds",
+              "Sweden South": "sds",
+              "southeastasia": "sea",
+              "Southeast Asia": "sea",
+              "switzerlandnorth": "szn",
+              "Switzerland North": "szn",
+              "switzerlandwest": "szw",
+              "Switzerland West": "szw",
+              "uaecentral": "uac",
+              "UAE Central": "uac",
+              "uaenorth": "uan",
+              "UAE North": "uan",
+              "uksouth": "uks",
+              "UK South": "uks",
+              "ukwest": "ukw",
+              "UK West": "ukw",
+              "westcentralus": "wcus",
+              "West Central US": "wcus",
+              "westeurope": "we",
+              "West Europe": "we",
+              "westus": "wus",
+              "West US": "wus",
+              "westus2": "wus2",
+              "West US 2": "wus2",
+              "westus3": "wus3",
+              "West US 3": "wus3",
+              "usdodcentral": "udc",
+              "USDoD Central": "udc",
+              "usdodeast": "ude",
+              "USDoD East": "ude",
+              "usgovarizona": "uga",
+              "USGov Arizona": "uga",
+              "usgoviowa": "ugi",
+              "USGov Iowa": "ugi",
+              "usgovtexas": "ugt",
+              "USGov Texas": "ugt",
+              "usgovvirginia": "ugv",
+              "USGov Virginia": "ugv",
+              "usnateast": "exe",
+              "USNat East": "exe",
+              "usnatwest": "exw",
+              "USNat West": "exw",
+              "usseceast": "rxe",
+              "USSec East": "rxe",
+              "ussecwest": "rxw",
+              "USSec West": "rxw",
+              "chinanorth": "bjb",
+              "China North": "bjb",
+              "chinanorth2": "bjb2",
+              "China North 2": "bjb2",
+              "chinanorth3": "bjb3",
+              "China North 3": "bjb3",
+              "chinaeast": "sha",
+              "China East": "sha",
+              "chinaeast2": "sha2",
+              "China East 2": "sha2",
+              "chinaeast3": "sha3",
+              "China East 3": "sha3",
+              "germanycentral": "gec",
+              "Germany Central": "gec",
+              "germanynortheast": "gne",
+              "Germany North East": "gne"
+            },
+            "maxLength": "[variables('Defs')[parameters('resourceType')].maxLength]",
+            "lowerCase": "[variables('Defs')[parameters('resourceType')].lowerCase]",
+            "doRemoveSegmentSeparator": "[or(empty(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators), parameters('removeSegmentSeparator'))]",
+            "shortLocationValue": "[variables('shortLocations')[parameters('location')]]",
+            "sequenceFormatted": "[format('{0:00}', parameters('sequence'))]",
+            "randomChars": "[if(greater(parameters('addRandomChars'), 0), take(uniqueString(subscription().subscriptionId, parameters('workloadName'), parameters('location'), parameters('environment'), string(parameters('sequence')), variables('resourceTypeReplacement'), parameters('additionalRandomInitializer')), parameters('addRandomChars')), '')]",
+            "namingConventionSubProcessed": "[if(empty(parameters('subWorkloadName')), replace(parameters('namingConvention'), '-{subWorkloadName}', ''), parameters('namingConvention'))]",
+            "actualSegmentSeparator": "[if(contains(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators, parameters('segmentSeparator')), parameters('segmentSeparator'), if(not(empty(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators)), variables('Defs')[parameters('resourceType')].allowedSegmentSeparators[0], ''))]",
+            "namingConventionSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(variables('namingConventionSubProcessed'), parameters('segmentSeparator'), ''), replace(variables('namingConventionSubProcessed'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "workloadNameSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(parameters('workloadName'), parameters('segmentSeparator'), ''), replace(parameters('workloadName'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "subWorkloadNameSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(parameters('subWorkloadName'), parameters('segmentSeparator'), ''), replace(parameters('subWorkloadName'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "randomizedWorkloadName": "[format('{0}{1}', variables('workloadNameSegmentSeparatorProcessed'), variables('randomChars'))]",
+            "resourceTypeReplacement": "[coalesce(parameters('resourceTypeReplacementOverride'), parameters('resourceType'))]",
+            "regularName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(parameters('environment'))), '{loc}', parameters('location')), '{seq}', variables('sequenceFormatted')), '{workloadName}', variables('randomizedWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "shortName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(take(parameters('environment'), 1))), '{loc}', variables('shortLocationValue')), '{seq}', string(parameters('sequence'))), '{workloadName}', variables('randomizedWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "mustTryVowelRemoval": "[greater(length(variables('shortName')), variables('maxLength'))]",
+            "minEffectiveVowelRemovalCount": "[sub(length(variables('shortName')), variables('maxLength'))]",
+            "workloadNameVowelsProcessed": "[if(and(variables('mustTryVowelRemoval'), parameters('useRemoveVowelStrategy')), replace(replace(replace(replace(replace(variables('workloadNameSegmentSeparatorProcessed'), 'a', ''), 'e', ''), 'i', ''), 'o', ''), 'u', ''), variables('workloadNameSegmentSeparatorProcessed'))]",
+            "subWorkloadNameVowelsProcessed": "[if(and(variables('mustTryVowelRemoval'), parameters('useRemoveVowelStrategy')), replace(replace(replace(replace(replace(variables('subWorkloadNameSegmentSeparatorProcessed'), 'a', ''), 'e', ''), 'i', ''), 'o', ''), 'u', ''), variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "mustShortenWorkloadName": "[less(sub(length(variables('randomizedWorkloadName')), length(format('{0}{1}', variables('workloadNameVowelsProcessed'), variables('randomChars')))), variables('minEffectiveVowelRemovalCount'))]",
+            "workloadNameCharsToKeep": "[if(variables('mustShortenWorkloadName'), add(sub(length(variables('workloadNameVowelsProcessed')), length(variables('shortName'))), variables('maxLength')), length(parameters('workloadName')))]",
+            "shortWorkloadName": "[format('{0}{1}', take(variables('workloadNameVowelsProcessed'), variables('workloadNameCharsToKeep')), variables('randomChars'))]",
+            "actualShortName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(take(parameters('environment'), 1))), '{loc}', variables('shortLocationValue')), '{seq}', string(parameters('sequence'))), '{workloadName}', variables('shortWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameVowelsProcessed'))]",
+            "actualName": "[if(or(parameters('requireShorten'), greater(length(variables('regularName')), variables('maxLength'))), variables('actualShortName'), variables('regularName'))]",
+            "actualNameCased": "[if(variables('lowerCase'), toLower(variables('actualName')), variables('actualName'))]"
+          },
+          "resources": {},
+          "outputs": {
+            "validName": {
+              "type": "string",
+              "value": "[take(variables('actualNameCased'), variables('maxLength'))]"
+            }
+          }
+        }
+      }
+    },
+    "filePrivateEndpointNameModule": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "filePrivateEndpointNameModule",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "namingConvention": {
+            "value": "[parameters('namingConvention')]"
+          },
+          "workloadName": {
+            "value": "[parameters('workloadName')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "resourceType": {
+            "value": "pe"
+          },
+          "resourceTypeReplacementOverride": {
+            "value": "pe-st-blob"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "sequence": {
+            "value": "[parameters('sequence')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.46.1.21595",
+              "templateHash": "14043603832211409352"
+            }
+          },
+          "parameters": {
+            "namingConvention": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "A valid Azure region name or region code."
+              }
+            },
+            "resourceType": {
+              "type": "string",
+              "allowedValues": [
+                "vnet",
+                "kv",
+                "st",
+                "cr",
+                "pg",
+                "ci",
+                "mysql",
+                "app",
+                "plan",
+                "appi",
+                "uami",
+                "dplscr",
+                "log",
+                "gal",
+                "aa",
+                "pe",
+                "nic"
+              ],
+              "metadata": {
+                "description": "A valid resource type abbreviation from the list of types supported by this module."
+              }
+            },
+            "environment": {
+              "type": "string"
+            },
+            "workloadName": {
+              "type": "string"
+            },
+            "subWorkloadName": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "sequence": {
+              "type": "int"
+            },
+            "requireShorten": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, the name will always use short versions of placeholders. If false, it will only be shortened when needed to fit in the maxLength."
+              }
+            },
+            "removeSegmentSeparator": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, hyphens will be removed from the name. If false, they will only be removed if required by the resource type."
+              }
+            },
+            "segmentSeparator": {
+              "type": "string",
+              "defaultValue": "-",
+              "allowedValues": [
+                "-",
+                "_",
+                ""
+              ],
+              "metadata": {
+                "description": "The segment separator used in the `namingConvention` parameter. Default and most supported is `-`."
+              }
+            },
+            "useRemoveVowelStrategy": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, when creating a short name, vowels will first be removed from the workload name."
+              }
+            },
+            "addRandomChars": {
+              "type": "int",
+              "defaultValue": 0,
+              "maxValue": 13,
+              "metadata": {
+                "description": "The number of random characters to add to the workload name. Random characters are created by the `uniquestring()` method combining subcription ID, workload name, location, environment, sequence, resource type, and the `additionalRandomInitializer` parameter."
+              }
+            },
+            "additionalRandomInitializer": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "When using addRandomChars > 0, generated resource names will be idempotent for the same subscription, workload, resource location, environment, sequence, and resource type. If an additional discrimnator is required, provide the value here."
+              }
+            },
+            "resourceTypeReplacementOverride": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "variables": {
+            "Defs": {
+              "vnet": {
+                "lowerCase": false,
+                "maxLength": 64,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "plan": {
+                "lowerCase": false,
+                "maxLength": 60,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "app": {
+                "lowerCase": false,
+                "maxLength": 60,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "kv": {
+                "lowerCase": false,
+                "maxLength": 24,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "st": {
+                "lowerCase": true,
+                "maxLength": 24,
+                "allowedSegmentSeparators": []
+              },
+              "cr": {
+                "lowerCase": false,
+                "maxLength": 50,
+                "allowedSegmentSeparators": []
+              },
+              "pg": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "ci": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "mysql": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "appi": {
+                "lowerCase": false,
+                "maxLength": 260,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "uami": {
+                "lowerCase": false,
+                "maxLength": 128,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "dplscr": {
+                "lowerCase": false,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "log": {
+                "lowerCase": false,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "gal": {
+                "lowerCase": false,
+                "maxLength": 80,
+                "allowedSegmentSeparators": [
+                  "_",
+                  "."
+                ]
+              },
+              "aa": {
+                "lowerCase": false,
+                "maxLength": 50,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "pe": {
+                "lowerCase": false,
+                "maxLength": 64,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_",
+                  "."
+                ]
+              },
+              "nic": {
+                "lowerCase": false,
+                "maxLength": 80,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_",
+                  "."
+                ]
+              }
+            },
+            "shortLocations": {
+              "australiacentral": "acl",
+              "Australia Central": "acl",
+              "australiacentral2": "acl2",
+              "Australia Central 2": "acl2",
+              "australiaeast": "ae",
+              "Australia East": "ae",
+              "australiasoutheast": "ase",
+              "Australia Southeast": "ase",
+              "brazilsouth": "brs",
+              "Brazil South": "brs",
+              "brazilsoutheast": "bse",
+              "Brazil Southeast": "bse",
+              "centraluseuap": "ccy",
+              "Central US EUAP": "ccy",
+              "canadacentral": "cnc",
+              "Canada Central": "cnc",
+              "canadaeast": "cne",
+              "Canada East": "cne",
+              "centralus": "cus",
+              "Central US": "cus",
+              "eastasia": "ea",
+              "East Asia": "ea",
+              "eastus2euap": "ecy",
+              "East US 2 EUAP": "ecy",
+              "eastus": "eus",
+              "East US": "eus",
+              "eastus2": "eus2",
+              "East US 2": "eus2",
+              "francecentral": "frc",
+              "France Central": "frc",
+              "francesouth": "frs",
+              "France South": "frs",
+              "germanynorth": "gn",
+              "Germany North": "gn",
+              "germanywestcentral": "gwc",
+              "Germany West Central": "gwc",
+              "centralindia": "inc",
+              "Central India": "inc",
+              "southindia": "ins",
+              "South India": "ins",
+              "westindia": "inw",
+              "West India": "inw",
+              "italynorth": "itn",
+              "Italy North": "itn",
+              "japaneast": "jpe",
+              "Japan East": "jpe",
+              "japanwest": "jpw",
+              "Japan West": "jpw",
+              "jioindiacentral": "jic",
+              "Jio India Central": "jic",
+              "jioindiawest": "jiw",
+              "Jio India West": "jiw",
+              "koreacentral": "krc",
+              "Korea Central": "krc",
+              "koreasouth": "krs",
+              "Korea South": "krs",
+              "northcentralus": "ncus",
+              "North Central US": "ncus",
+              "northeurope": "ne",
+              "North Europe": "ne",
+              "norwayeast": "nwe",
+              "Norway East": "nwe",
+              "norwaywest": "nww",
+              "Norway West": "nww",
+              "qatarcentral": "qac",
+              "Qatar Central": "qac",
+              "southafricanorth": "san",
+              "South Africa North": "san",
+              "southafricawest": "saw",
+              "South Africa West": "saw",
+              "southcentralus": "scus",
+              "South Central US": "scus",
+              "swedencentral": "sdc",
+              "Sweden Central": "sdc",
+              "swedensouth": "sds",
+              "Sweden South": "sds",
+              "southeastasia": "sea",
+              "Southeast Asia": "sea",
+              "switzerlandnorth": "szn",
+              "Switzerland North": "szn",
+              "switzerlandwest": "szw",
+              "Switzerland West": "szw",
+              "uaecentral": "uac",
+              "UAE Central": "uac",
+              "uaenorth": "uan",
+              "UAE North": "uan",
+              "uksouth": "uks",
+              "UK South": "uks",
+              "ukwest": "ukw",
+              "UK West": "ukw",
+              "westcentralus": "wcus",
+              "West Central US": "wcus",
+              "westeurope": "we",
+              "West Europe": "we",
+              "westus": "wus",
+              "West US": "wus",
+              "westus2": "wus2",
+              "West US 2": "wus2",
+              "westus3": "wus3",
+              "West US 3": "wus3",
+              "usdodcentral": "udc",
+              "USDoD Central": "udc",
+              "usdodeast": "ude",
+              "USDoD East": "ude",
+              "usgovarizona": "uga",
+              "USGov Arizona": "uga",
+              "usgoviowa": "ugi",
+              "USGov Iowa": "ugi",
+              "usgovtexas": "ugt",
+              "USGov Texas": "ugt",
+              "usgovvirginia": "ugv",
+              "USGov Virginia": "ugv",
+              "usnateast": "exe",
+              "USNat East": "exe",
+              "usnatwest": "exw",
+              "USNat West": "exw",
+              "usseceast": "rxe",
+              "USSec East": "rxe",
+              "ussecwest": "rxw",
+              "USSec West": "rxw",
+              "chinanorth": "bjb",
+              "China North": "bjb",
+              "chinanorth2": "bjb2",
+              "China North 2": "bjb2",
+              "chinanorth3": "bjb3",
+              "China North 3": "bjb3",
+              "chinaeast": "sha",
+              "China East": "sha",
+              "chinaeast2": "sha2",
+              "China East 2": "sha2",
+              "chinaeast3": "sha3",
+              "China East 3": "sha3",
+              "germanycentral": "gec",
+              "Germany Central": "gec",
+              "germanynortheast": "gne",
+              "Germany North East": "gne"
+            },
+            "maxLength": "[variables('Defs')[parameters('resourceType')].maxLength]",
+            "lowerCase": "[variables('Defs')[parameters('resourceType')].lowerCase]",
+            "doRemoveSegmentSeparator": "[or(empty(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators), parameters('removeSegmentSeparator'))]",
+            "shortLocationValue": "[variables('shortLocations')[parameters('location')]]",
+            "sequenceFormatted": "[format('{0:00}', parameters('sequence'))]",
+            "randomChars": "[if(greater(parameters('addRandomChars'), 0), take(uniqueString(subscription().subscriptionId, parameters('workloadName'), parameters('location'), parameters('environment'), string(parameters('sequence')), variables('resourceTypeReplacement'), parameters('additionalRandomInitializer')), parameters('addRandomChars')), '')]",
+            "namingConventionSubProcessed": "[if(empty(parameters('subWorkloadName')), replace(parameters('namingConvention'), '-{subWorkloadName}', ''), parameters('namingConvention'))]",
+            "actualSegmentSeparator": "[if(contains(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators, parameters('segmentSeparator')), parameters('segmentSeparator'), if(not(empty(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators)), variables('Defs')[parameters('resourceType')].allowedSegmentSeparators[0], ''))]",
+            "namingConventionSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(variables('namingConventionSubProcessed'), parameters('segmentSeparator'), ''), replace(variables('namingConventionSubProcessed'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "workloadNameSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(parameters('workloadName'), parameters('segmentSeparator'), ''), replace(parameters('workloadName'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "subWorkloadNameSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(parameters('subWorkloadName'), parameters('segmentSeparator'), ''), replace(parameters('subWorkloadName'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "randomizedWorkloadName": "[format('{0}{1}', variables('workloadNameSegmentSeparatorProcessed'), variables('randomChars'))]",
+            "resourceTypeReplacement": "[coalesce(parameters('resourceTypeReplacementOverride'), parameters('resourceType'))]",
+            "regularName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(parameters('environment'))), '{loc}', parameters('location')), '{seq}', variables('sequenceFormatted')), '{workloadName}', variables('randomizedWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "shortName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(take(parameters('environment'), 1))), '{loc}', variables('shortLocationValue')), '{seq}', string(parameters('sequence'))), '{workloadName}', variables('randomizedWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "mustTryVowelRemoval": "[greater(length(variables('shortName')), variables('maxLength'))]",
+            "minEffectiveVowelRemovalCount": "[sub(length(variables('shortName')), variables('maxLength'))]",
+            "workloadNameVowelsProcessed": "[if(and(variables('mustTryVowelRemoval'), parameters('useRemoveVowelStrategy')), replace(replace(replace(replace(replace(variables('workloadNameSegmentSeparatorProcessed'), 'a', ''), 'e', ''), 'i', ''), 'o', ''), 'u', ''), variables('workloadNameSegmentSeparatorProcessed'))]",
+            "subWorkloadNameVowelsProcessed": "[if(and(variables('mustTryVowelRemoval'), parameters('useRemoveVowelStrategy')), replace(replace(replace(replace(replace(variables('subWorkloadNameSegmentSeparatorProcessed'), 'a', ''), 'e', ''), 'i', ''), 'o', ''), 'u', ''), variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "mustShortenWorkloadName": "[less(sub(length(variables('randomizedWorkloadName')), length(format('{0}{1}', variables('workloadNameVowelsProcessed'), variables('randomChars')))), variables('minEffectiveVowelRemovalCount'))]",
+            "workloadNameCharsToKeep": "[if(variables('mustShortenWorkloadName'), add(sub(length(variables('workloadNameVowelsProcessed')), length(variables('shortName'))), variables('maxLength')), length(parameters('workloadName')))]",
+            "shortWorkloadName": "[format('{0}{1}', take(variables('workloadNameVowelsProcessed'), variables('workloadNameCharsToKeep')), variables('randomChars'))]",
+            "actualShortName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(take(parameters('environment'), 1))), '{loc}', variables('shortLocationValue')), '{seq}', string(parameters('sequence'))), '{workloadName}', variables('shortWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameVowelsProcessed'))]",
+            "actualName": "[if(or(parameters('requireShorten'), greater(length(variables('regularName')), variables('maxLength'))), variables('actualShortName'), variables('regularName'))]",
+            "actualNameCased": "[if(variables('lowerCase'), toLower(variables('actualName')), variables('actualName'))]"
+          },
+          "resources": {},
+          "outputs": {
+            "validName": {
+              "type": "string",
+              "value": "[take(variables('actualNameCased'), variables('maxLength'))]"
+            }
+          }
+        }
+      }
+    },
+    "blobPENicNameModule": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "blobPENicNameModule",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "namingConvention": {
+            "value": "[parameters('namingConvention')]"
+          },
+          "workloadName": {
+            "value": "[parameters('workloadName')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "resourceType": {
+            "value": "nic"
+          },
+          "resourceTypeReplacementOverride": {
+            "value": "nic-pe-st-blob"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "sequence": {
+            "value": "[parameters('sequence')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.46.1.21595",
+              "templateHash": "14043603832211409352"
+            }
+          },
+          "parameters": {
+            "namingConvention": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "A valid Azure region name or region code."
+              }
+            },
+            "resourceType": {
+              "type": "string",
+              "allowedValues": [
+                "vnet",
+                "kv",
+                "st",
+                "cr",
+                "pg",
+                "ci",
+                "mysql",
+                "app",
+                "plan",
+                "appi",
+                "uami",
+                "dplscr",
+                "log",
+                "gal",
+                "aa",
+                "pe",
+                "nic"
+              ],
+              "metadata": {
+                "description": "A valid resource type abbreviation from the list of types supported by this module."
+              }
+            },
+            "environment": {
+              "type": "string"
+            },
+            "workloadName": {
+              "type": "string"
+            },
+            "subWorkloadName": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "sequence": {
+              "type": "int"
+            },
+            "requireShorten": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, the name will always use short versions of placeholders. If false, it will only be shortened when needed to fit in the maxLength."
+              }
+            },
+            "removeSegmentSeparator": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, hyphens will be removed from the name. If false, they will only be removed if required by the resource type."
+              }
+            },
+            "segmentSeparator": {
+              "type": "string",
+              "defaultValue": "-",
+              "allowedValues": [
+                "-",
+                "_",
+                ""
+              ],
+              "metadata": {
+                "description": "The segment separator used in the `namingConvention` parameter. Default and most supported is `-`."
+              }
+            },
+            "useRemoveVowelStrategy": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, when creating a short name, vowels will first be removed from the workload name."
+              }
+            },
+            "addRandomChars": {
+              "type": "int",
+              "defaultValue": 0,
+              "maxValue": 13,
+              "metadata": {
+                "description": "The number of random characters to add to the workload name. Random characters are created by the `uniquestring()` method combining subcription ID, workload name, location, environment, sequence, resource type, and the `additionalRandomInitializer` parameter."
+              }
+            },
+            "additionalRandomInitializer": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "When using addRandomChars > 0, generated resource names will be idempotent for the same subscription, workload, resource location, environment, sequence, and resource type. If an additional discrimnator is required, provide the value here."
+              }
+            },
+            "resourceTypeReplacementOverride": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "variables": {
+            "Defs": {
+              "vnet": {
+                "lowerCase": false,
+                "maxLength": 64,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "plan": {
+                "lowerCase": false,
+                "maxLength": 60,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "app": {
+                "lowerCase": false,
+                "maxLength": 60,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "kv": {
+                "lowerCase": false,
+                "maxLength": 24,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "st": {
+                "lowerCase": true,
+                "maxLength": 24,
+                "allowedSegmentSeparators": []
+              },
+              "cr": {
+                "lowerCase": false,
+                "maxLength": 50,
+                "allowedSegmentSeparators": []
+              },
+              "pg": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "ci": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "mysql": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "appi": {
+                "lowerCase": false,
+                "maxLength": 260,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "uami": {
+                "lowerCase": false,
+                "maxLength": 128,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "dplscr": {
+                "lowerCase": false,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "log": {
+                "lowerCase": false,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "gal": {
+                "lowerCase": false,
+                "maxLength": 80,
+                "allowedSegmentSeparators": [
+                  "_",
+                  "."
+                ]
+              },
+              "aa": {
+                "lowerCase": false,
+                "maxLength": 50,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "pe": {
+                "lowerCase": false,
+                "maxLength": 64,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_",
+                  "."
+                ]
+              },
+              "nic": {
+                "lowerCase": false,
+                "maxLength": 80,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_",
+                  "."
+                ]
+              }
+            },
+            "shortLocations": {
+              "australiacentral": "acl",
+              "Australia Central": "acl",
+              "australiacentral2": "acl2",
+              "Australia Central 2": "acl2",
+              "australiaeast": "ae",
+              "Australia East": "ae",
+              "australiasoutheast": "ase",
+              "Australia Southeast": "ase",
+              "brazilsouth": "brs",
+              "Brazil South": "brs",
+              "brazilsoutheast": "bse",
+              "Brazil Southeast": "bse",
+              "centraluseuap": "ccy",
+              "Central US EUAP": "ccy",
+              "canadacentral": "cnc",
+              "Canada Central": "cnc",
+              "canadaeast": "cne",
+              "Canada East": "cne",
+              "centralus": "cus",
+              "Central US": "cus",
+              "eastasia": "ea",
+              "East Asia": "ea",
+              "eastus2euap": "ecy",
+              "East US 2 EUAP": "ecy",
+              "eastus": "eus",
+              "East US": "eus",
+              "eastus2": "eus2",
+              "East US 2": "eus2",
+              "francecentral": "frc",
+              "France Central": "frc",
+              "francesouth": "frs",
+              "France South": "frs",
+              "germanynorth": "gn",
+              "Germany North": "gn",
+              "germanywestcentral": "gwc",
+              "Germany West Central": "gwc",
+              "centralindia": "inc",
+              "Central India": "inc",
+              "southindia": "ins",
+              "South India": "ins",
+              "westindia": "inw",
+              "West India": "inw",
+              "italynorth": "itn",
+              "Italy North": "itn",
+              "japaneast": "jpe",
+              "Japan East": "jpe",
+              "japanwest": "jpw",
+              "Japan West": "jpw",
+              "jioindiacentral": "jic",
+              "Jio India Central": "jic",
+              "jioindiawest": "jiw",
+              "Jio India West": "jiw",
+              "koreacentral": "krc",
+              "Korea Central": "krc",
+              "koreasouth": "krs",
+              "Korea South": "krs",
+              "northcentralus": "ncus",
+              "North Central US": "ncus",
+              "northeurope": "ne",
+              "North Europe": "ne",
+              "norwayeast": "nwe",
+              "Norway East": "nwe",
+              "norwaywest": "nww",
+              "Norway West": "nww",
+              "qatarcentral": "qac",
+              "Qatar Central": "qac",
+              "southafricanorth": "san",
+              "South Africa North": "san",
+              "southafricawest": "saw",
+              "South Africa West": "saw",
+              "southcentralus": "scus",
+              "South Central US": "scus",
+              "swedencentral": "sdc",
+              "Sweden Central": "sdc",
+              "swedensouth": "sds",
+              "Sweden South": "sds",
+              "southeastasia": "sea",
+              "Southeast Asia": "sea",
+              "switzerlandnorth": "szn",
+              "Switzerland North": "szn",
+              "switzerlandwest": "szw",
+              "Switzerland West": "szw",
+              "uaecentral": "uac",
+              "UAE Central": "uac",
+              "uaenorth": "uan",
+              "UAE North": "uan",
+              "uksouth": "uks",
+              "UK South": "uks",
+              "ukwest": "ukw",
+              "UK West": "ukw",
+              "westcentralus": "wcus",
+              "West Central US": "wcus",
+              "westeurope": "we",
+              "West Europe": "we",
+              "westus": "wus",
+              "West US": "wus",
+              "westus2": "wus2",
+              "West US 2": "wus2",
+              "westus3": "wus3",
+              "West US 3": "wus3",
+              "usdodcentral": "udc",
+              "USDoD Central": "udc",
+              "usdodeast": "ude",
+              "USDoD East": "ude",
+              "usgovarizona": "uga",
+              "USGov Arizona": "uga",
+              "usgoviowa": "ugi",
+              "USGov Iowa": "ugi",
+              "usgovtexas": "ugt",
+              "USGov Texas": "ugt",
+              "usgovvirginia": "ugv",
+              "USGov Virginia": "ugv",
+              "usnateast": "exe",
+              "USNat East": "exe",
+              "usnatwest": "exw",
+              "USNat West": "exw",
+              "usseceast": "rxe",
+              "USSec East": "rxe",
+              "ussecwest": "rxw",
+              "USSec West": "rxw",
+              "chinanorth": "bjb",
+              "China North": "bjb",
+              "chinanorth2": "bjb2",
+              "China North 2": "bjb2",
+              "chinanorth3": "bjb3",
+              "China North 3": "bjb3",
+              "chinaeast": "sha",
+              "China East": "sha",
+              "chinaeast2": "sha2",
+              "China East 2": "sha2",
+              "chinaeast3": "sha3",
+              "China East 3": "sha3",
+              "germanycentral": "gec",
+              "Germany Central": "gec",
+              "germanynortheast": "gne",
+              "Germany North East": "gne"
+            },
+            "maxLength": "[variables('Defs')[parameters('resourceType')].maxLength]",
+            "lowerCase": "[variables('Defs')[parameters('resourceType')].lowerCase]",
+            "doRemoveSegmentSeparator": "[or(empty(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators), parameters('removeSegmentSeparator'))]",
+            "shortLocationValue": "[variables('shortLocations')[parameters('location')]]",
+            "sequenceFormatted": "[format('{0:00}', parameters('sequence'))]",
+            "randomChars": "[if(greater(parameters('addRandomChars'), 0), take(uniqueString(subscription().subscriptionId, parameters('workloadName'), parameters('location'), parameters('environment'), string(parameters('sequence')), variables('resourceTypeReplacement'), parameters('additionalRandomInitializer')), parameters('addRandomChars')), '')]",
+            "namingConventionSubProcessed": "[if(empty(parameters('subWorkloadName')), replace(parameters('namingConvention'), '-{subWorkloadName}', ''), parameters('namingConvention'))]",
+            "actualSegmentSeparator": "[if(contains(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators, parameters('segmentSeparator')), parameters('segmentSeparator'), if(not(empty(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators)), variables('Defs')[parameters('resourceType')].allowedSegmentSeparators[0], ''))]",
+            "namingConventionSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(variables('namingConventionSubProcessed'), parameters('segmentSeparator'), ''), replace(variables('namingConventionSubProcessed'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "workloadNameSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(parameters('workloadName'), parameters('segmentSeparator'), ''), replace(parameters('workloadName'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "subWorkloadNameSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(parameters('subWorkloadName'), parameters('segmentSeparator'), ''), replace(parameters('subWorkloadName'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "randomizedWorkloadName": "[format('{0}{1}', variables('workloadNameSegmentSeparatorProcessed'), variables('randomChars'))]",
+            "resourceTypeReplacement": "[coalesce(parameters('resourceTypeReplacementOverride'), parameters('resourceType'))]",
+            "regularName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(parameters('environment'))), '{loc}', parameters('location')), '{seq}', variables('sequenceFormatted')), '{workloadName}', variables('randomizedWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "shortName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(take(parameters('environment'), 1))), '{loc}', variables('shortLocationValue')), '{seq}', string(parameters('sequence'))), '{workloadName}', variables('randomizedWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "mustTryVowelRemoval": "[greater(length(variables('shortName')), variables('maxLength'))]",
+            "minEffectiveVowelRemovalCount": "[sub(length(variables('shortName')), variables('maxLength'))]",
+            "workloadNameVowelsProcessed": "[if(and(variables('mustTryVowelRemoval'), parameters('useRemoveVowelStrategy')), replace(replace(replace(replace(replace(variables('workloadNameSegmentSeparatorProcessed'), 'a', ''), 'e', ''), 'i', ''), 'o', ''), 'u', ''), variables('workloadNameSegmentSeparatorProcessed'))]",
+            "subWorkloadNameVowelsProcessed": "[if(and(variables('mustTryVowelRemoval'), parameters('useRemoveVowelStrategy')), replace(replace(replace(replace(replace(variables('subWorkloadNameSegmentSeparatorProcessed'), 'a', ''), 'e', ''), 'i', ''), 'o', ''), 'u', ''), variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "mustShortenWorkloadName": "[less(sub(length(variables('randomizedWorkloadName')), length(format('{0}{1}', variables('workloadNameVowelsProcessed'), variables('randomChars')))), variables('minEffectiveVowelRemovalCount'))]",
+            "workloadNameCharsToKeep": "[if(variables('mustShortenWorkloadName'), add(sub(length(variables('workloadNameVowelsProcessed')), length(variables('shortName'))), variables('maxLength')), length(parameters('workloadName')))]",
+            "shortWorkloadName": "[format('{0}{1}', take(variables('workloadNameVowelsProcessed'), variables('workloadNameCharsToKeep')), variables('randomChars'))]",
+            "actualShortName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(take(parameters('environment'), 1))), '{loc}', variables('shortLocationValue')), '{seq}', string(parameters('sequence'))), '{workloadName}', variables('shortWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameVowelsProcessed'))]",
+            "actualName": "[if(or(parameters('requireShorten'), greater(length(variables('regularName')), variables('maxLength'))), variables('actualShortName'), variables('regularName'))]",
+            "actualNameCased": "[if(variables('lowerCase'), toLower(variables('actualName')), variables('actualName'))]"
+          },
+          "resources": {},
+          "outputs": {
+            "validName": {
+              "type": "string",
+              "value": "[take(variables('actualNameCased'), variables('maxLength'))]"
+            }
+          }
+        }
+      }
+    },
+    "filePENicNameModule": {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "filePENicNameModule",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "namingConvention": {
+            "value": "[parameters('namingConvention')]"
+          },
+          "workloadName": {
+            "value": "[parameters('workloadName')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "resourceType": {
+            "value": "nic"
+          },
+          "resourceTypeReplacementOverride": {
+            "value": "nic-pe-st-file"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "sequence": {
+            "value": "[parameters('sequence')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.46.1.21595",
+              "templateHash": "14043603832211409352"
+            }
+          },
+          "parameters": {
+            "namingConvention": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "A valid Azure region name or region code."
+              }
+            },
+            "resourceType": {
+              "type": "string",
+              "allowedValues": [
+                "vnet",
+                "kv",
+                "st",
+                "cr",
+                "pg",
+                "ci",
+                "mysql",
+                "app",
+                "plan",
+                "appi",
+                "uami",
+                "dplscr",
+                "log",
+                "gal",
+                "aa",
+                "pe",
+                "nic"
+              ],
+              "metadata": {
+                "description": "A valid resource type abbreviation from the list of types supported by this module."
+              }
+            },
+            "environment": {
+              "type": "string"
+            },
+            "workloadName": {
+              "type": "string"
+            },
+            "subWorkloadName": {
+              "type": "string",
+              "defaultValue": ""
+            },
+            "sequence": {
+              "type": "int"
+            },
+            "requireShorten": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, the name will always use short versions of placeholders. If false, it will only be shortened when needed to fit in the maxLength."
+              }
+            },
+            "removeSegmentSeparator": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, hyphens will be removed from the name. If false, they will only be removed if required by the resource type."
+              }
+            },
+            "segmentSeparator": {
+              "type": "string",
+              "defaultValue": "-",
+              "allowedValues": [
+                "-",
+                "_",
+                ""
+              ],
+              "metadata": {
+                "description": "The segment separator used in the `namingConvention` parameter. Default and most supported is `-`."
+              }
+            },
+            "useRemoveVowelStrategy": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "If true, when creating a short name, vowels will first be removed from the workload name."
+              }
+            },
+            "addRandomChars": {
+              "type": "int",
+              "defaultValue": 0,
+              "maxValue": 13,
+              "metadata": {
+                "description": "The number of random characters to add to the workload name. Random characters are created by the `uniquestring()` method combining subcription ID, workload name, location, environment, sequence, resource type, and the `additionalRandomInitializer` parameter."
+              }
+            },
+            "additionalRandomInitializer": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "When using addRandomChars > 0, generated resource names will be idempotent for the same subscription, workload, resource location, environment, sequence, and resource type. If an additional discrimnator is required, provide the value here."
+              }
+            },
+            "resourceTypeReplacementOverride": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          "variables": {
+            "Defs": {
+              "vnet": {
+                "lowerCase": false,
+                "maxLength": 64,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "plan": {
+                "lowerCase": false,
+                "maxLength": 60,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "app": {
+                "lowerCase": false,
+                "maxLength": 60,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "kv": {
+                "lowerCase": false,
+                "maxLength": 24,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "st": {
+                "lowerCase": true,
+                "maxLength": 24,
+                "allowedSegmentSeparators": []
+              },
+              "cr": {
+                "lowerCase": false,
+                "maxLength": 50,
+                "allowedSegmentSeparators": []
+              },
+              "pg": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "ci": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "mysql": {
+                "lowerCase": true,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "appi": {
+                "lowerCase": false,
+                "maxLength": 260,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "uami": {
+                "lowerCase": false,
+                "maxLength": 128,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_"
+                ]
+              },
+              "dplscr": {
+                "lowerCase": false,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "log": {
+                "lowerCase": false,
+                "maxLength": 63,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "gal": {
+                "lowerCase": false,
+                "maxLength": 80,
+                "allowedSegmentSeparators": [
+                  "_",
+                  "."
+                ]
+              },
+              "aa": {
+                "lowerCase": false,
+                "maxLength": 50,
+                "allowedSegmentSeparators": [
+                  "-"
+                ]
+              },
+              "pe": {
+                "lowerCase": false,
+                "maxLength": 64,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_",
+                  "."
+                ]
+              },
+              "nic": {
+                "lowerCase": false,
+                "maxLength": 80,
+                "allowedSegmentSeparators": [
+                  "-",
+                  "_",
+                  "."
+                ]
+              }
+            },
+            "shortLocations": {
+              "australiacentral": "acl",
+              "Australia Central": "acl",
+              "australiacentral2": "acl2",
+              "Australia Central 2": "acl2",
+              "australiaeast": "ae",
+              "Australia East": "ae",
+              "australiasoutheast": "ase",
+              "Australia Southeast": "ase",
+              "brazilsouth": "brs",
+              "Brazil South": "brs",
+              "brazilsoutheast": "bse",
+              "Brazil Southeast": "bse",
+              "centraluseuap": "ccy",
+              "Central US EUAP": "ccy",
+              "canadacentral": "cnc",
+              "Canada Central": "cnc",
+              "canadaeast": "cne",
+              "Canada East": "cne",
+              "centralus": "cus",
+              "Central US": "cus",
+              "eastasia": "ea",
+              "East Asia": "ea",
+              "eastus2euap": "ecy",
+              "East US 2 EUAP": "ecy",
+              "eastus": "eus",
+              "East US": "eus",
+              "eastus2": "eus2",
+              "East US 2": "eus2",
+              "francecentral": "frc",
+              "France Central": "frc",
+              "francesouth": "frs",
+              "France South": "frs",
+              "germanynorth": "gn",
+              "Germany North": "gn",
+              "germanywestcentral": "gwc",
+              "Germany West Central": "gwc",
+              "centralindia": "inc",
+              "Central India": "inc",
+              "southindia": "ins",
+              "South India": "ins",
+              "westindia": "inw",
+              "West India": "inw",
+              "italynorth": "itn",
+              "Italy North": "itn",
+              "japaneast": "jpe",
+              "Japan East": "jpe",
+              "japanwest": "jpw",
+              "Japan West": "jpw",
+              "jioindiacentral": "jic",
+              "Jio India Central": "jic",
+              "jioindiawest": "jiw",
+              "Jio India West": "jiw",
+              "koreacentral": "krc",
+              "Korea Central": "krc",
+              "koreasouth": "krs",
+              "Korea South": "krs",
+              "northcentralus": "ncus",
+              "North Central US": "ncus",
+              "northeurope": "ne",
+              "North Europe": "ne",
+              "norwayeast": "nwe",
+              "Norway East": "nwe",
+              "norwaywest": "nww",
+              "Norway West": "nww",
+              "qatarcentral": "qac",
+              "Qatar Central": "qac",
+              "southafricanorth": "san",
+              "South Africa North": "san",
+              "southafricawest": "saw",
+              "South Africa West": "saw",
+              "southcentralus": "scus",
+              "South Central US": "scus",
+              "swedencentral": "sdc",
+              "Sweden Central": "sdc",
+              "swedensouth": "sds",
+              "Sweden South": "sds",
+              "southeastasia": "sea",
+              "Southeast Asia": "sea",
+              "switzerlandnorth": "szn",
+              "Switzerland North": "szn",
+              "switzerlandwest": "szw",
+              "Switzerland West": "szw",
+              "uaecentral": "uac",
+              "UAE Central": "uac",
+              "uaenorth": "uan",
+              "UAE North": "uan",
+              "uksouth": "uks",
+              "UK South": "uks",
+              "ukwest": "ukw",
+              "UK West": "ukw",
+              "westcentralus": "wcus",
+              "West Central US": "wcus",
+              "westeurope": "we",
+              "West Europe": "we",
+              "westus": "wus",
+              "West US": "wus",
+              "westus2": "wus2",
+              "West US 2": "wus2",
+              "westus3": "wus3",
+              "West US 3": "wus3",
+              "usdodcentral": "udc",
+              "USDoD Central": "udc",
+              "usdodeast": "ude",
+              "USDoD East": "ude",
+              "usgovarizona": "uga",
+              "USGov Arizona": "uga",
+              "usgoviowa": "ugi",
+              "USGov Iowa": "ugi",
+              "usgovtexas": "ugt",
+              "USGov Texas": "ugt",
+              "usgovvirginia": "ugv",
+              "USGov Virginia": "ugv",
+              "usnateast": "exe",
+              "USNat East": "exe",
+              "usnatwest": "exw",
+              "USNat West": "exw",
+              "usseceast": "rxe",
+              "USSec East": "rxe",
+              "ussecwest": "rxw",
+              "USSec West": "rxw",
+              "chinanorth": "bjb",
+              "China North": "bjb",
+              "chinanorth2": "bjb2",
+              "China North 2": "bjb2",
+              "chinanorth3": "bjb3",
+              "China North 3": "bjb3",
+              "chinaeast": "sha",
+              "China East": "sha",
+              "chinaeast2": "sha2",
+              "China East 2": "sha2",
+              "chinaeast3": "sha3",
+              "China East 3": "sha3",
+              "germanycentral": "gec",
+              "Germany Central": "gec",
+              "germanynortheast": "gne",
+              "Germany North East": "gne"
+            },
+            "maxLength": "[variables('Defs')[parameters('resourceType')].maxLength]",
+            "lowerCase": "[variables('Defs')[parameters('resourceType')].lowerCase]",
+            "doRemoveSegmentSeparator": "[or(empty(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators), parameters('removeSegmentSeparator'))]",
+            "shortLocationValue": "[variables('shortLocations')[parameters('location')]]",
+            "sequenceFormatted": "[format('{0:00}', parameters('sequence'))]",
+            "randomChars": "[if(greater(parameters('addRandomChars'), 0), take(uniqueString(subscription().subscriptionId, parameters('workloadName'), parameters('location'), parameters('environment'), string(parameters('sequence')), variables('resourceTypeReplacement'), parameters('additionalRandomInitializer')), parameters('addRandomChars')), '')]",
+            "namingConventionSubProcessed": "[if(empty(parameters('subWorkloadName')), replace(parameters('namingConvention'), '-{subWorkloadName}', ''), parameters('namingConvention'))]",
+            "actualSegmentSeparator": "[if(contains(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators, parameters('segmentSeparator')), parameters('segmentSeparator'), if(not(empty(variables('Defs')[parameters('resourceType')].allowedSegmentSeparators)), variables('Defs')[parameters('resourceType')].allowedSegmentSeparators[0], ''))]",
+            "namingConventionSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(variables('namingConventionSubProcessed'), parameters('segmentSeparator'), ''), replace(variables('namingConventionSubProcessed'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "workloadNameSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(parameters('workloadName'), parameters('segmentSeparator'), ''), replace(parameters('workloadName'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "subWorkloadNameSegmentSeparatorProcessed": "[if(variables('doRemoveSegmentSeparator'), replace(parameters('subWorkloadName'), parameters('segmentSeparator'), ''), replace(parameters('subWorkloadName'), parameters('segmentSeparator'), variables('actualSegmentSeparator')))]",
+            "randomizedWorkloadName": "[format('{0}{1}', variables('workloadNameSegmentSeparatorProcessed'), variables('randomChars'))]",
+            "resourceTypeReplacement": "[coalesce(parameters('resourceTypeReplacementOverride'), parameters('resourceType'))]",
+            "regularName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(parameters('environment'))), '{loc}', parameters('location')), '{seq}', variables('sequenceFormatted')), '{workloadName}', variables('randomizedWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "shortName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(take(parameters('environment'), 1))), '{loc}', variables('shortLocationValue')), '{seq}', string(parameters('sequence'))), '{workloadName}', variables('randomizedWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "mustTryVowelRemoval": "[greater(length(variables('shortName')), variables('maxLength'))]",
+            "minEffectiveVowelRemovalCount": "[sub(length(variables('shortName')), variables('maxLength'))]",
+            "workloadNameVowelsProcessed": "[if(and(variables('mustTryVowelRemoval'), parameters('useRemoveVowelStrategy')), replace(replace(replace(replace(replace(variables('workloadNameSegmentSeparatorProcessed'), 'a', ''), 'e', ''), 'i', ''), 'o', ''), 'u', ''), variables('workloadNameSegmentSeparatorProcessed'))]",
+            "subWorkloadNameVowelsProcessed": "[if(and(variables('mustTryVowelRemoval'), parameters('useRemoveVowelStrategy')), replace(replace(replace(replace(replace(variables('subWorkloadNameSegmentSeparatorProcessed'), 'a', ''), 'e', ''), 'i', ''), 'o', ''), 'u', ''), variables('subWorkloadNameSegmentSeparatorProcessed'))]",
+            "mustShortenWorkloadName": "[less(sub(length(variables('randomizedWorkloadName')), length(format('{0}{1}', variables('workloadNameVowelsProcessed'), variables('randomChars')))), variables('minEffectiveVowelRemovalCount'))]",
+            "workloadNameCharsToKeep": "[if(variables('mustShortenWorkloadName'), add(sub(length(variables('workloadNameVowelsProcessed')), length(variables('shortName'))), variables('maxLength')), length(parameters('workloadName')))]",
+            "shortWorkloadName": "[format('{0}{1}', take(variables('workloadNameVowelsProcessed'), variables('workloadNameCharsToKeep')), variables('randomChars'))]",
+            "actualShortName": "[replace(replace(replace(replace(replace(replace(variables('namingConventionSegmentSeparatorProcessed'), '{env}', toLower(take(parameters('environment'), 1))), '{loc}', variables('shortLocationValue')), '{seq}', string(parameters('sequence'))), '{workloadName}', variables('shortWorkloadName')), '{rtype}', variables('resourceTypeReplacement')), '{subWorkloadName}', variables('subWorkloadNameVowelsProcessed'))]",
+            "actualName": "[if(or(parameters('requireShorten'), greater(length(variables('regularName')), variables('maxLength'))), variables('actualShortName'), variables('regularName'))]",
+            "actualNameCased": "[if(variables('lowerCase'), toLower(variables('actualName')), variables('actualName'))]"
+          },
+          "resources": {},
+          "outputs": {
+            "validName": {
+              "type": "string",
+              "value": "[take(variables('actualNameCased'), variables('maxLength'))]"
+            }
+          }
+        }
+      }
     }
   }
 }

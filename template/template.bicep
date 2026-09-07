@@ -45,10 +45,6 @@ param mySqlUsername string = 'sqladmin'
 @secure()
 param mySqlPassword string
 
-// @description('The date when the backup schedule should start. Defaults to tomorrow.')
-// param scheduleStartDate string = dateTimeAdd(utcNow(), 'P1D', 'yyyy-MM-dd')
-// @description('The time when the backup schedule should start, in UTC. Defaults to 6 AM UTC.')
-// param scheduleStartTimeUtc string = '06:00:00' // 2 AM Eastern Time
 @description('The names of the databases to be backed up. Defaults to ["redcapdb"].')
 param databaseNamesForBackup array = ['redcapdb']
 @description('The hostname of the MySQL server to be backed up.')
@@ -111,7 +107,7 @@ module userAssignedIdentityModule 'br/public:avm/res/managed-identity/user-assig
   }
 }
 
-module automationAccountOuterModule 'automationAccount.bicep' = {
+module automationAccountOuterModule './modules/automationAccount.bicep' = {
   name: 'automationAccountOuterModule'
   params: {
     automationAccountName: automationAccountName
@@ -122,7 +118,7 @@ module automationAccountOuterModule 'automationAccount.bicep' = {
     uamiResourceId: userAssignedIdentityModule.outputs.resourceId
     databaseHostName: databaseHostName
     databaseNamesForBackup: databaseNamesForBackup
-    storageAccountName: storageAccountName
+    storageAccountName: storageAccountModule.outputs.name
     backupFileShareName: backupFileShareName
     backupBlobContainerNames: backupBlobContainerNames
     containerRegistryLoginServer: containerRegistryModule.outputs.loginServer
@@ -231,6 +227,7 @@ module storageAccountModule 'br/public:avm/res/storage/storage-account:0.33.0' =
 module containerRegistryModule 'br/public:avm/res/container-registry/registry:0.13.0' = {
   name: 'containerRegistryModule'
   params: {
+    // TODO: Make configurable
     name: 'mysqlltrprodcr01${take(uniqueString(resourceGroup().id), 4)}'
     location: location
     acrSku: 'Basic'
@@ -243,7 +240,6 @@ module containerRegistryModule 'br/public:avm/res/container-registry/registry:0.
     networkRuleBypassAllowedForTasks: true
 
     roleAssignments: [
-      // LATER: is the first role assignment still needed?
       {
         principalId: userAssignedIdentityModule.outputs.principalId
         roleDefinitionIdOrName: 'AcrPull'
@@ -271,7 +267,7 @@ module containerRegistryModule 'br/public:avm/res/container-registry/registry:0.
       }
     ]
 
-    // Build the container image
+    // Task to build the container image from the Dockerfile in this repo
     tasks: [
       {
         name: 'azure-mysql-ltr'

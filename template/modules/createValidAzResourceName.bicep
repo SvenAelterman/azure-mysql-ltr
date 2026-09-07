@@ -52,10 +52,10 @@ param segmentSeparator string = '-'
 @description('If true, when creating a short name, vowels will first be removed from the workload name.')
 param useRemoveVowelStrategy bool = false
 
-@description('The number of random characters to add to the workload name. Random characters are created by the `uniquestring()` method combining subcription ID, workload name, location, environment, sequence, resource type, and the `additionalRandomInitializer` parameter.')
+@description('The number of random characters to add to the workload name. Random characters are created by the `uniquestring()` method combining subscription ID, workload name, location, environment, sequence, resource type, and the `additionalRandomInitializer` parameter.')
 @maxValue(13)
 param addRandomChars int = 0
-@description('When using addRandomChars > 0, generated resource names will be idempotent for the same subscription, workload, resource location, environment, sequence, and resource type. If an additional discrimnator is required, provide the value here.')
+@description('When using addRandomChars > 0, generated resource names will be idempotent for the same subscription, workload, resource location, environment, sequence, and resource type. If an additional discriminator is required, provide the value here.')
 param additionalRandomInitializer string = ''
 
 param resourceTypeReplacementOverride string?

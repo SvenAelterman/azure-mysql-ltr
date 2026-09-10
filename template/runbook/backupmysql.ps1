@@ -22,7 +22,11 @@ Param(
     [Parameter(Mandatory = $true)]
     [string] $Location,
     [Parameter()]
-    [string] $BackupFileNamePrefix = 'dumps-'
+    [string] $BackupFileNamePrefix = 'dumps-',
+    [Parameter()]
+    [int] $ContainerCpuCores = 1,
+    [Parameter()]
+    [double] $ContainerMemoryInGb = 1.5
 )
 
 # Ensures you do not inherit an AzContext in your runbook
@@ -38,33 +42,36 @@ $AzureContext = Set-AzContext -SubscriptionName $AzureContext.Subscription -Defa
 
 Write-Output "Successfully connected with Automation account's Managed Identity"
 
-$ContainerName = 'mysqldumpci1'
+[string]$ContainerName = 'mysqldumpci1'
 
 $MySQLCredential = Get-AutomationPSCredential -Name "MySQLCredential"
-$MySQLUsername = $MySQLCredential.UserName
-$MySQLPassword = $MySQLCredential.GetNetworkCredential().Password
+[string]$MySQLUsername = $MySQLCredential.UserName
+[securestring]$MySQLPassword = ConvertTo-SecureString ($MySQLCredential.GetNetworkCredential().Password) -AsPlainText -Force
 
 Write-Output "Retrieved MySQL credential"
 
 # Construct the container entry command
-$BackupJobTimeStamp = Get-Date -Format "yyyyMMddhhmmss"
+[string]$BackupJobTimeStamp = Get-Date -Format "yyyyMMddhhmmss"
 # LATER: Allow customizing file name prefix
-$filename = "--result-file=/data/backups/" + $BackupFileNamePrefix + $BackupJobTimeStamp + ".sql"
-$h1 = "--host=$DatabaseHostName"
-$user = "--user=$MySQLUsername"
+[string]$filename = "--result-file=/data/backups/" + $BackupFileNamePrefix + $BackupJobTimeStamp + ".sql"
+[string]$HostName = "--host=$DatabaseHostName"
+[string]$user = "--user=$MySQLUsername"
 # Do not interpret $MYSQL_PASSWORD here, it's an env var inside the container
-$sqlPassword = '--password=$MYSQL_PASSWORD' 
-$dbnamearray = $DatabaseNames.Split(" ", [System.StringSplitOptions]::RemoveEmptyEntries)
+[string]$sqlPassword = '--password=${{MYSQL_PASSWORD}}'
 
-$cmd = "/usr/local/bin/backup-and-upload.sh", "--opt", "--single-transaction", $h1, $user, $sqlPassword, $filename, "--databases"
+[string[]]$DatabaseNamesArray = $DatabaseNames.Split(" ", [System.StringSplitOptions]::RemoveEmptyEntries)
+
+[string[]]$cmd = "/usr/local/bin/backup-and-upload.sh", "--opt", "--single-transaction", $HostName, $user, $sqlPassword, $filename, "--databases"
 
 # Add each database name as a separate entry to the container command
-foreach ($names in $dbnamearray) {
-    $cmd += $names
+foreach ($DatabaseName in $DatabaseNamesArray) {
+    $cmd += $DatabaseName
 }
 
 # Get storage account access key
-$StorageAccountKey = ConvertTo-SecureString ((Get-AzStorageAccountKey -ResourceGroupName $ContainerResourceGroupName -AccountName $StorageAccountName) | Where-object { $_.KeyName -eq "Key1" }).Value -AsPlainText -Force
+[securestring]$StorageAccountKey = ConvertTo-SecureString ((Get-AzStorageAccountKey -ResourceGroupName $ContainerResourceGroupName -AccountName $StorageAccountName) `
+    | Where-object { $_.KeyName -eq "Key1" }).Value -AsPlainText -Force
+
 # Create mount object as backup volume in container
 $VolumeMount = New-AzContainerInstanceVolumeMountObject -Name "backups" -MountPath "/data/backups/" -ReadOnly $false
 # Create a new volume on the mount object from the Azure File share
@@ -80,16 +87,17 @@ $ImageRegistryCredential = New-AzContainerGroupImageRegistryCredentialObject -Se
 $EnvironmentVariables = @(
     (New-AzContainerInstanceEnvironmentVariableObject -Name "STORAGE_ACCOUNT_NAME" -Value $StorageAccountName),
     (New-AzContainerInstanceEnvironmentVariableObject -Name "BLOB_CONTAINER_NAME" -Value $BackupBlobContainerName),
-    (New-AzContainerInstanceEnvironmentVariableObject -Name "MANAGED_IDENTITY_CLIENT_ID" -Value $ManagedIdentityClientId),
     # Log folder does not need to exist yet
-    (New-AzContainerInstanceEnvironmentVariableObject -Name "AZCOPY_LOG_LOCATION" -Value "/data/backups/azcopy-logs/"),
+    (New-AzContainerInstanceEnvironmentVariableObject -Name "AZCOPY_LOG_LOCATION" -Value "/data/backups/azcopy-logs"),
+    (New-AzContainerInstanceEnvironmentVariableObject -Name "AZCOPY_AUTO_LOGIN_TYPE" -Value "MSI"),
+    (New-AzContainerInstanceEnvironmentVariableObject -Name "AZCOPY_MSI_CLIENT_ID" -Value $ManagedIdentityClientId),
     (New-AzContainerInstanceEnvironmentVariableObject -Name "MYSQL_PASSWORD" -SecureValue $MySQLPassword)
 )
 
 # Create the container instance object
 $Container = New-AzContainerInstanceObject -Name $ContainerName -Image "$ContainerRegistryUrl/azure-mysql-ltr/mysql-ltr-dump:latest" -VolumeMount $VolumeMount `
     -Command $cmd -EnvironmentVariable $EnvironmentVariables `
-    -RequestCpu 1 -RequestMemoryInGb 1.5
+    -RequestCpu $ContainerCpuCores -RequestMemoryInGb $ContainerMemoryInGb
 
 $SubnetId = @{
     Id   = $ContainerInstanceSubnetResourceId
@@ -112,7 +120,7 @@ try {
         $Status = (Get-AzContainerGroup -Name $ContainerName -ResourceGroupName $ContainerResourceGroupName | Select-Object -Property @{Name = "Status"; Expression = { $_.InstanceViewState } }).Status
 
         if ($Status -eq "Failed") {
-            Write-Output "Container in Failed State. Please check the logs below."
+            Write-Error "Container in Failed State. Please check the logs below."
             Break
         }
         elseif ($Status -eq "Stopped" -or $Status -eq "Succeeded") {
@@ -135,10 +143,14 @@ catch {
 
     throw
 }
+finally {
+    [string]$separator = '=' * 80
+    Write-Output "Fetching container logs..."
+    Write-Output $separator
+    Get-AzContainerInstanceLog -ContainerGroupName $ContainerGroup.Name -ContainerName $ContainerName -ResourceGroupName $ContainerResourceGroupName | Write-Output
+    Write-Output $separator
 
-Write-Output "Fetching container logs..."
-Get-AzContainerInstanceLog -ContainerGroupName $ContainerGroup.Name -ContainerName $ContainerName -ResourceGroupName $ContainerResourceGroupName | Write-Output
-
-# Stop container after backup
-Write-Output "Stopping container..."
-Stop-AzContainerGroup -Name $ContainerGroup.Name -ResourceGroupName $ContainerResourceGroupName
+    # Stop container after backup
+    Write-Output "Stopping container..."
+    Stop-AzContainerGroup -Name $ContainerGroup.Name -ResourceGroupName $ContainerResourceGroupName
+}

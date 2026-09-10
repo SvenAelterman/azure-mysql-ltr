@@ -30,16 +30,24 @@ Before deploying, ensure that:
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FSvenAelterman%2Fazure-mysql-ltr%2Fmain%2Ftemplate%2Ftemplate.json)
 
-You can also deploy with Azure CLI and a Bicep parameters file:
+You can also deploy with Azure CLI and a JSON parameters file:
 
 ```powershell
 az deployment group create `
  --resource-group <resource-group-name> `
- --template-file template/template.bicep `
- --parameters template/<parameters-file>.bicepparam
+ --template-uri 'https://raw.githubusercontent.com/SvenAelterman/azure-mysql-ltr/refs/heads/main/template/template.json' `
+ --parameters template/<parameters-file>.json
 ```
 
 Do not commit real database passwords to a parameters file. Supply `mySqlPassword` through a secure deployment process.
+
+### Post Deployment
+
+The container image must be built and pushed to the container registry. The container registry has a task to make this easy:
+
+```bash
+az acr task run -g <replace_with_resource_group_name> -n azure-mysql-ltr -r <replace_with_container_registry_name>
+```
 
 ## Template parameters
 
@@ -47,9 +55,10 @@ The entry point is [`template/template.bicep`](template/template.bicep).
 
 | Parameter | Type | Required | Default | Description |
 | --- | --- | :---: | --- | --- |
-| `storageAccountName` | string | No | `mysqlltrprodst01<unique>` | Name of the storage account that holds the backup file share. |
-| `automationAccountName` | string | No | `MySQLLTR-prod-aa-<location>-01` | Name of the Azure Automation account. |
-| `userAssignedIdentityName` | string | No | `MySQLLTR-prod-id-<location>-01` | Name of the user-assigned managed identity used by the runbook and container workflow. |
+| `namingConvention` | string | No | `{workloadName}-{env}-{rtype}-{loc}-{seq}` | Naming convention used for generated resource names. Supported placeholders are `{workloadName}`, `{env}`, `{rtype}`, `{loc}`, and `{seq}`. |
+| `workloadName` | string | No | `mysqlltr` | Workload name used in generated resource names. |
+| `environment` | string | No | `prod` | Environment name used in generated resource names. |
+| `sequence` | int | No | `1` | Sequence number used in generated resource names. |
 | `location` | string | No | Resource group location | Azure region for the deployed resources. |
 | `backupFileShareName` | string | No | `backup-file-share` | Name of the Azure Files share where SQL dumps are stored. |
 | `backupBlobContainerNames` | array of strings | No | `['backup-weekly-container', 'backup-monthly-container', 'backup-yearly-container']` | Blob containers where SQL dumps are copied. Entries map by position to `automationSchedules`; repeat a name to send multiple schedules to the same container. |
@@ -60,6 +69,7 @@ The entry point is [`template/template.bicep`](template/template.bicep).
 | `blobPrivateDnsZoneResourceId` | string | Yes | - | Resource ID of the existing `privatelink.blob.core.windows.net` private DNS zone. The zone must be linked to the container virtual network. |
 | `privateEndpointSubnetResourceId` | string | Yes | - | Resource ID of the subnet where the storage account private endpoints are created. |
 | `containerInstanceSubnetResourceId` | string | Yes | - | Resource ID of the subnet used by the container group. It must be delegated to `Microsoft.ContainerInstance/containerGroups`. |
+| `containerTaskDockerContextPath` | string | No | `https://github.com/SvenAelterman/azure-mysql-ltr` | URL of the Docker build context used by the Azure Container Registry task. |
 | `mySqlUsername` | string | No | `sqladmin` | MySQL account used by `mysqldump`. |
 | `mySqlPassword` | secure string | Yes | - | Password for the MySQL account. It is stored as an encrypted Automation credential. |
 | `databaseNamesForBackup` | array | No | `['redcapdb']` | Names of the databases included in each dump. |

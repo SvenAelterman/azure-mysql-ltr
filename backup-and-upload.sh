@@ -15,6 +15,9 @@ for arg in "$@"; do
   fi
 
   case "$arg" in
+    # If the parameter is specified as --result-file=filename.sql,
+    # otherwise it might be specified without = between the param name and value
+    # and then the next argument is the file name
     --result-file=*)
       dump_file="${arg#--result-file=}"
       ;;
@@ -29,7 +32,30 @@ if [ -z "$dump_file" ]; then
   exit 1
 fi
 
+echo "Running mysqldump..."
 mysqldump "$@"
 
+echo "Signing in to azcopy with managed identity..."
 azcopy login --identity --identity-client-id "$MANAGED_IDENTITY_CLIENT_ID"
-azcopy copy "$dump_file" "https://${STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${BLOB_CONTAINER_NAME}/$(basename "$dump_file")" --overwrite=true
+
+echo "Uploading $dump_file to Azure Blob Storage..."
+destination="https://${STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${BLOB_CONTAINER_NAME}/$(basename "$dump_file")"
+max_attempts=3
+attempt=1
+
+while ! azcopy copy "$dump_file" "$destination" --overwrite=true; do
+  
+  if [ "$attempt" -ge "$max_attempts" ]; then
+    echo "azcopy copy failed after $max_attempts attempts." >&2
+    exit 1
+  fi
+
+  # Add a 10 second sleep delay per retry
+  sleep $((attempt * 10))
+
+  attempt=$((attempt + 1))
+  echo "azcopy copy failed. Retrying (attempt $attempt of $max_attempts)..." >&2
+
+done
+
+# TODO: After successful file copy with azcopy, delete local file

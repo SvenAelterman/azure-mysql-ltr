@@ -25,6 +25,11 @@ for arg in "$@"; do
       previous_arg_was_result_file=true
       ;;
   esac
+
+  # If this is the SQL password argument, replace the placeholder with the actual password
+  if [[ "$arg" == '--password=${{MYSQL_PASSWORD}}' ]]; then
+    set -- "${@/$arg/--password=$MYSQL_PASSWORD}"
+  fi
 done
 
 if [ -z "$dump_file" ]; then

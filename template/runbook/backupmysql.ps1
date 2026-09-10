@@ -20,7 +20,9 @@ Param(
     [Parameter(Mandatory = $true)]
     [string] $ContainerRegistryUrl,
     [Parameter(Mandatory = $true)]
-    [string] $Location
+    [string] $Location,
+    [Parameter()]
+    [string] $BackupFileNamePrefix = 'dumps-'
 )
 
 # Ensures you do not inherit an AzContext in your runbook
@@ -44,11 +46,14 @@ $MySQLPassword = $MySQLCredential.GetNetworkCredential().Password
 
 Write-Output "Retrieved MySQL credential"
 
+# Construct the container entry command
 $BackupJobTimeStamp = Get-Date -Format "yyyyMMddhhmmss"
-$filename = "--result-file=/data/backups/dumps-" + $BackupJobTimeStamp + ".sql"
-$h1 = "--host=" + $DatabaseHostName
-$user = "--user=" + $MySQLUsername
-$sqlPassword = "--password=" + $MySQLPassword
+# LATER: Allow customizing file name prefix
+$filename = "--result-file=/data/backups/" + $BackupFileNamePrefix + $BackupJobTimeStamp + ".sql"
+$h1 = "--host=$DatabaseHostName"
+$user = "--user=$MySQLUsername"
+# Do not interpret $MYSQL_PASSWORD here, it's an env var inside the container
+$sqlPassword = '--password=$MYSQL_PASSWORD' 
 $dbnamearray = $DatabaseNames.Split(" ", [System.StringSplitOptions]::RemoveEmptyEntries)
 
 $cmd = "/usr/local/bin/backup-and-upload.sh", "--opt", "--single-transaction", $h1, $user, $sqlPassword, $filename, "--databases"
@@ -75,7 +80,10 @@ $ImageRegistryCredential = New-AzContainerGroupImageRegistryCredentialObject -Se
 $EnvironmentVariables = @(
     (New-AzContainerInstanceEnvironmentVariableObject -Name "STORAGE_ACCOUNT_NAME" -Value $StorageAccountName),
     (New-AzContainerInstanceEnvironmentVariableObject -Name "BLOB_CONTAINER_NAME" -Value $BackupBlobContainerName),
-    (New-AzContainerInstanceEnvironmentVariableObject -Name "MANAGED_IDENTITY_CLIENT_ID" -Value $ManagedIdentityClientId)
+    (New-AzContainerInstanceEnvironmentVariableObject -Name "MANAGED_IDENTITY_CLIENT_ID" -Value $ManagedIdentityClientId),
+    # Log folder does not need to exist yet
+    (New-AzContainerInstanceEnvironmentVariableObject -Name "AZCOPY_LOG_LOCATION" -Value "/data/backups/azcopy-logs/"),
+    (New-AzContainerInstanceEnvironmentVariableObject -Name "MYSQL_PASSWORD" -SecureValue $MySQLPassword)
 )
 
 # Create the container instance object
